@@ -126,6 +126,30 @@ const LoginPage: React.FC<LoginPageProps> = ({ onToggleDarkMode, isDarkMode }) =
             <p className="text-slate-500 dark:text-slate-400 text-xs font-medium text-center">
               {isRegisterMode ? 'Regístrese para gestionar sus horarios académicos' : 'Poderosa gestión de horarios académicos'}
             </p>
+
+            {/* Segmented Auth Selector */}
+            <div className="w-full bg-slate-100/80 dark:bg-slate-900/80 p-1 rounded-xl flex gap-1 mt-6">
+              <button
+                type="button"
+                onClick={() => { setIsRegisterMode(false); setError(null); }}
+                className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${!isRegisterMode
+                  ? 'bg-white dark:bg-slate-800 text-primary shadow-sm'
+                  : 'text-slate-450 hover:text-slate-600 dark:hover:text-slate-300'
+                }`}
+              >
+                Iniciar Sesión
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsRegisterMode(true); setError(null); }}
+                className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${isRegisterMode
+                  ? 'bg-white dark:bg-slate-800 text-primary shadow-sm'
+                  : 'text-slate-450 hover:text-slate-600 dark:hover:text-slate-300'
+                }`}
+              >
+                Registrarse
+              </button>
+            </div>
           </div>
 
           <div className="px-10 pb-10 flex flex-col gap-6">
