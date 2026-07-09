@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full antialiased text-slate-900 bg-slate-50 dark:bg-slate-950 dark:text-slate-50">
+
+<head>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Scheduler Pro</title>
+
+  <!-- Fonts: Outfit for display, Inter for body -->
+  <link href="https://fonts.googleapis.com" rel="preconnect" />
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@300..700,0..1&display=swap"
+    rel="stylesheet" />
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": {
+              DEFAULT: "#6366f1", // Indigo 500
+              dark: "#4f46e5", // Indigo 600
+              light: "#818cf8", // Indigo 400
+            },
+            "background-light": "#f8fafc",
+            "background-dark": "#020617", // Slate 950
+            "surface-dark": "#0f172a", // Slate 900
+            "surface-light": "#ffffff",
+            "border-dark": "#1e293b",
+            "border-light": "#e2e8f0",
+            "text-secondary-dark": "#94a3b8",
+            "text-secondary-light": "#64748b",
+            "success": "#10b981",
+            "warning": "#f59e0b",
+            "error": "#ef4444",
+            "level-1": "#8b5cf6",
+            "level-2": "#3b82f6",
+            "level-3": "#10b981",
+            "level-4": "#f59e0b",
+          },
+          fontFamily: {
+            "display": ["Outfit", "sans-serif"],
+            "body": ["Inter", "sans-serif"],
+          },
+          boxShadow: {
+            'premium': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            'glow': '0 0 20px rgba(99, 102, 241, 0.25)',
+            'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.15)',
+            'glass-dark': '0 8px 32px 0 rgba(0, 0, 0, 0.4)',
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.5s ease-out',
+            'slide-up': 'slideUp 0.5s ease-out forwards',
+            'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'blob': 'blob 7s infinite',
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            slideUp: {
+              '0%': { opacity: '0', transform: 'translateY(20px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+            blob: {
+              '0%': { transform: 'translate(0px, 0px) scale(1)' },
+              '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
+              '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
+              '100%': { transform: 'translate(0px, 0px) scale(1)' },
+            }
+          }
+        },
+      },
+    }
+  </script>
+  <style type="text/tailwindcss">
+    /* Base typography overrides */
+        h1, h2, h3, h4, h5, h6 { @apply font-display tracking-tight text-slate-900 dark:text-slate-50; }
+        body { @apply font-body text-slate-600 dark:text-slate-300; }
+        
+        /* Premium utilities */
+        .glass-effect {
+            @apply bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white/40 dark:border-white/5;
+        }
+        .glass-panel {
+            @apply bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border border-slate-200/50 dark:border-slate-800/50 shadow-premium;
+        }
+        .input-glass {
+            @apply bg-slate-50/50 dark:bg-slate-950/30 border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary/50 focus:border-primary/50 backdrop-blur-sm transition-all focus:outline-none;
+        }
+        
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+        
+        /* Premium Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { @apply bg-slate-300 dark:bg-slate-700 rounded-full hover:bg-slate-400 dark:hover:bg-slate-600 transition-colors; }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.12.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0"
+  }
+}
+</script>
+  <link rel="stylesheet" href="/index.css">
+</head>
+
+<body
+  class="h-full relative overflow-y-auto selection:bg-primary/30 selection:text-primary-dark dark:selection:text-primary-light custom-scrollbar">
+  <div id="root" class="h-full"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+
+</html>

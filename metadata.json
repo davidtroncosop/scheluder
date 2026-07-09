@@ -1,0 +1,7 @@
+{
+  "name": "Sistema de Gestión Horarios",
+  "description": "Una plataforma avanzada para la gestión de horarios, docentes y espacios físicos diseñada para instituciones educativas.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

@@ -1,0 +1,13 @@
+name = "scheduler-pro"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "./dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "scheduler-pro-db"
+database_id = "32f8c8bc-73cd-4be2-8830-e1a1e719345c"
+migrations_dir = "migrations"
+
+[vars]
+ENVIRONMENT = "production"
+JWT_SECRET = "scheduler-pro-secret-key-change-in-production"

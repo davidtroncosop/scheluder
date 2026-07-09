@@ -1,0 +1,26 @@
+Codigo,Nombre,Edificio,Piso,Tipo,Capacidad,Compartida,Equipamiento
+SALA-101,Sala 101,Edificio D,1,TEO,50,No,Proyector datashow y pizarra digital
+SALA-102,Sala 102,Edificio D,1,TEO,50,No,Proyector y pizarra tradicional
+SALA-103,Sala 103,Edificio D,1,TEO,60,No,Proyector datashow sistema de audio
+SALA-104,Sala 104,Edificio D,1,TEO,40,No,Proyector y pizarra
+SALA-201,Sala 201,Edificio D,2,TEO,45,No,Proyector datashow pizarra digital
+SALA-202,Sala 202,Edificio D,2,TEO,50,No,Proyector sistema de audio
+SALA-203,Sala 203,Edificio D,2,TEO,45,No,Proyector y pizarra digital
+SALA-204,Sala 204,Edificio D,2,TEO,40,No,Proyector datashow
+SALA-301,Sala 301,Edificio D,3,TEO,42,No,Proyector y pizarra digital
+SALA-302,Sala 302,Edificio D,3,TEO,40,No,Proyector datashow
+SALA-303,Sala 303,Edificio D,3,TEO,45,No,Proyector sistema audio
+SALA-304,Sala 304,Edificio D,3,TEO,48,No,Proyector y pizarra
+SALA-305,Sala 305,Edificio D,3,TEO,50,No,Proyector datashow pizarra digital
+SALA-401,Sala 401,Edificio D,4,TEO,38,No,Proyector y audio
+SALA-402,Sala 402,Edificio D,4,TEO,40,No,Proyector datashow
+LAB-KINE-1,Laboratorio Kinesiología 1,Edificio D,1,LAB,20,No,Camillas eléctricas equipos de electroestimulación ultrasonido
+LAB-KINE-2,Laboratorio Kinesiología 2,Edificio D,1,LAB,20,No,Camillas equipos de tracción mecanoterapia
+LAB-CARDIO,Laboratorio Cardiorrespiratorio,Edificio D,2,LAB,18,No,Ergómetros espirómetros oxímetros monitores cardíacos
+LAB-BIOMECANICA,Laboratorio de Biomecánica,Edificio D,2,LAB,15,No,Plataformas de fuerza sistema de captura de movimiento
+LAB-NEURO,Laboratorio Neurorrehabilitación,Edificio D,3,LAB,16,No,Equipos de biofeedback estimuladores eléctricos equipo de marcha
+LAB-QUIM-1,Laboratorio de Química 1,Edificio C,2,LAB,25,Sí,Microscopios centrífugas espectrofotómetros
+SIM-1,Sala de Simulación 1,Edificio D,1,SIM,12,No,Maniquíes de simulación clínica monitores
+SIM-2,Sala de Simulación 2,Edificio D,1,SIM,12,No,Maniquíes simuladores de paciente
+AUDITORIO-A,Auditorio Principal,Edificio Central,1,AUD,200,Sí,Sistema de audio profesional proyector HD pantalla gigante
+AUDITORIO-B,Auditorio Secundario,Edificio Central,2,AUD,100,Sí,Sistema de audio proyector pantalla

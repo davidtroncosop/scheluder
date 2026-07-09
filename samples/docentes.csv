@@ -1,0 +1,11 @@
+nombre,email,max_horas,departamento,tipo_contrato,lunes,martes,miercoles,jueves,viernes
+Prof. José Reyes,jose.reyes@universidad.cl,20,Kinesiología,Planta,"M1,M2,M3,M4","M1,M2,M3","M1,M2,M3,M4","M1,M2","M1,M2"
+Dra. María Rivas,maria.rivas@universidad.cl,16,Kinesiología,Planta,"M1,M2","M1,M2,M3,M4","M1,M2","M1,M2,M3,M4",
+Prof. Carlos Soto,carlos.soto@universidad.cl,10,Kinesiología,Media Jornada,"M1,M2","M1,M2","M1,M2","M1,M2",
+Dr. Andrés Valenzuela,andres.valenzuela@universidad.cl,20,Salud Pública,Planta,"M1,M2,M3,M4","M1,M2,M3,M4","M1,M2,M3,M4","M1,M2,M3,M4","M1,M2,M3,M4"
+Prof. Claudia González,claudia.gonzalez@universidad.cl,12,Terapia Ocupacional,Honorarios,"M3,M4","M3,M4","M3,M4","M3,M4",
+Dra. Patricia Martínez,patricia.martinez@universidad.cl,16,Kinesiología,Planta,"M1,M2,M3","M1,M2,M3","M1,M2,M3","M1,M2,M3","M1,M2"
+Ayud. Felipe Pérez,felipe.perez@universidad.cl,8,Kinesiología,Honorarios,"M1,M2","M1,M2",,,"M1,M2"
+Prof. Roberto Fuentes,roberto.fuentes@universidad.cl,20,Anatomía,Planta,"M1,M2,M3,M4","M1,M2,M3,M4","M1,M2,M3,M4","M1,M2,M3,M4","M1,M2,M3,M4"
+Dra. Carolina Muñoz,carolina.munoz@universidad.cl,16,Fisiología,Planta,"M1,M2","M1,M2,M3,M4","M1,M2","M1,M2,M3,M4",
+Prof. Luis Hernández,luis.hernandez@universidad.cl,10,Biomecánica,Media Jornada,"M3,M4","M3,M4","M3,M4",,

@@ -1,0 +1,33 @@
+NRC,Asignatura,Codigo,Nivel,Tipo,Horas,Docente,RUT Docente,Sala Preferida,Dia,Horario,Estudiantes
+10101,Anatomía Humana I,DANA001,1,TEO,4,Dr. Miguel Fernández,12.345.678-9,SALA 101,Lunes,M1,45
+10101,Anatomía Humana I,DANA001,1,TEO,4,Dr. Miguel Fernández,12.345.678-9,SALA 101,Miércoles,M1,45
+10102,Anatomía Humana I,DANA001,1,LAB,2,Dr. Miguel Fernández,12.345.678-9,LAB KINE 1,Jueves,M3,20
+10103,Bioquímica,DBIO001,1,TEO,3,Dra. Carolina Vega,11.222.333-4,SALA 102,Martes,M2,50
+10103,Bioquímica,DBIO001,1,TEO,3,Dra. Carolina Vega,11.222.333-4,SALA 102,Jueves,M2,50
+10104,Bioquímica,DBIO001,1,LAB,2,Dra. Carolina Vega,11.222.333-4,LAB QUIM 1,Viernes,M3,25
+10105,Introducción a la Kinesiología,DKIN001,1,TEO,2,Klgo. Roberto Soto,10.111.222-3,SALA 103,Lunes,M3,55
+10106,Inglés I,DING001,1,TEO,2,Prof. María Torres,9.888.777-6,SALA 104,Miércoles,T1,40
+20101,Anatomía Humana II,DANA002,2,TEO,4,Dr. Miguel Fernández,12.345.678-9,SALA 201,Lunes,M2,42
+20101,Anatomía Humana II,DANA002,2,TEO,4,Dr. Miguel Fernández,12.345.678-9,SALA 201,Miércoles,M2,42
+20102,Anatomía Humana II,DANA002,2,LAB,2,Dr. Miguel Fernández,12.345.678-9,LAB KINE 1,Viernes,M1,20
+20103,Fisiología I,DFIS001,2,TEO,4,Dr. Alejandro Valenzuela,13.456.789-0,SALA 202,Martes,M1,48
+20103,Fisiología I,DFIS001,2,TEO,4,Dr. Alejandro Valenzuela,13.456.789-0,SALA 202,Jueves,M1,48
+20104,Biomecánica Básica,DBME001,2,TEO,3,Klga. Patricia Muñoz,14.567.890-1,SALA 203,Lunes,T1,45
+20104,Biomecánica Básica,DBME001,2,LAB,2,Klga. Patricia Muñoz,14.567.890-1,LAB BIOMECANICA,Miércoles,T2,22
+20105,Psicología General,DPSI001,2,TEO,2,Ps. Carlos Inostroza,15.678.901-2,SALA 204,Viernes,M2,50
+30101,Fisiología II,DFIS002,3,TEO,4,Dr. Alejandro Valenzuela,13.456.789-0,SALA 301,Lunes,M1,40
+30101,Fisiología II,DFIS002,3,TEO,4,Dr. Alejandro Valenzuela,13.456.789-0,SALA 301,Miércoles,M1,40
+30102,Kinesiología Cardiorrespiratoria,DKCR001,3,TEO,3,Dra. María Paz Rivas,16.789.012-3,SALA 302,Martes,M2,38
+30102,Kinesiología Cardiorrespiratoria,DKCR001,3,LAB,2,Dra. María Paz Rivas,16.789.012-3,LAB CARDIO,Jueves,M3,18
+30103,Kinesiología Musculoesquelética I,DKME001,3,TEO,3,Klgo. Roberto Soto,10.111.222-3,SALA 303,Lunes,M3,42
+30103,Kinesiología Musculoesquelética I,DKME001,3,LAB,2,Klgo. Roberto Soto,10.111.222-3,LAB KINE 2,Miércoles,M3,20
+30104,Bioética en Salud,DBIE001,3,TEO,2,Prof. Andrea Contreras,17.890.123-4,SALA 304,Viernes,M1,45
+30105,Metodología de la Investigación,DMET001,3,TEO,2,Dr. Juan Sepúlveda,18.901.234-5,SALA 305,Martes,T1,48
+40101,Kinesiología Neurológica,DKNE001,4,TEO,4,Dra. María Paz Rivas,16.789.012-3,SALA 401,Lunes,M2,35
+40101,Kinesiología Neurológica,DKNE001,4,TEO,4,Dra. María Paz Rivas,16.789.012-3,SALA 401,Miércoles,M2,35
+40102,Kinesiología Neurológica,DKNE001,4,LAB,2,Dra. María Paz Rivas,16.789.012-3,LAB NEURO,Jueves,T1,15
+40103,Kinesiología Musculoesquelética II,DKME002,4,TEO,3,Klgo. Roberto Soto,10.111.222-3,SALA 402,Martes,M1,38
+40103,Kinesiología Musculoesquelética II,DKME002,4,LAB,2,Klgo. Roberto Soto,10.111.222-3,LAB KINE 2,Viernes,M2,18
+40104,Práctica Clínica I,DPRA001,4,TAL,6,Dr. Alejandro Valenzuela,13.456.789-0,SIMULACION 1,Lunes,T1,12
+40104,Práctica Clínica I,DPRA001,4,TAL,6,Dr. Alejandro Valenzuela,13.456.789-0,SIMULACION 1,Miércoles,T1,12
+40105,Salud Pública,DSAL001,4,TEO,2,Dr. Felipe Araya,19.012.345-6,AUDITORIO A,Jueves,M2,60

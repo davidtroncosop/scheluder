@@ -1,0 +1,16 @@
+RUT,Nombre,Email,Tipo Contrato,Max Horas,Especialidad,Telefono,Estado
+12.345.678-9,Dr. Miguel Fernández,m.fernandez@universidad.cl,Planta,44,Anatomía y Morfología,+56912345678,Activo
+11.222.333-4,Dra. Carolina Vega,c.vega@universidad.cl,Planta,44,Bioquímica Clínica,+56922334455,Activo
+10.111.222-3,Klgo. Roberto Soto,r.soto@universidad.cl,Media Jornada,22,Kinesiología Musculoesquelética,+56933445566,Activo
+9.888.777-6,Prof. María Torres,m.torres@universidad.cl,Honorarios,12,Inglés Técnico,+56944556677,Activo
+13.456.789-0,Dr. Alejandro Valenzuela,a.valenzuela@universidad.cl,Planta,44,Fisiología del Ejercicio,+56955667788,Activo
+14.567.890-1,Klga. Patricia Muñoz,p.munoz@universidad.cl,Planta,44,Biomecánica,+56966778899,Activo
+15.678.901-2,Ps. Carlos Inostroza,c.inostroza@universidad.cl,Honorarios,8,Psicología de la Salud,+56977889900,Activo
+16.789.012-3,Dra. María Paz Rivas,mp.rivas@universidad.cl,Planta,44,Neurorehabilitación,+56988990011,Activo
+17.890.123-4,Prof. Andrea Contreras,a.contreras@universidad.cl,Honorarios,6,Bioética,+56999001122,Activo
+18.901.234-5,Dr. Juan Sepúlveda,j.sepulveda@universidad.cl,Media Jornada,20,Metodología de Investigación,+56900112233,Activo
+19.012.345-6,Dr. Felipe Araya,f.araya@universidad.cl,Planta,44,Salud Pública,+56911223344,Activo
+20.123.456-7,Klga. Francisca Pérez,f.perez@universidad.cl,Adjunto,16,Kinesiología Deportiva,+56922334456,Activo
+21.234.567-8,Klgo. Sebastián González,s.gonzalez@universidad.cl,Honorarios,10,Kinesiología Geriátrica,+56933445567,Activo
+22.345.678-9,Dra. Valentina Morales,v.morales@universidad.cl,Media Jornada,22,Cardiología Clínica,+56944556678,Activo
+23.456.789-0,Prof. Ignacio Silva,i.silva@universidad.cl,Honorarios,8,Comunicación Efectiva,+56955667789,Inactivo

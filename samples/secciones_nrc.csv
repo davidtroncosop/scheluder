@@ -1,0 +1,21 @@
+nrc,codigo,nombre,nivel,horas,tipo,docente,nrc_teorico,sala_preferida,seccion
+10001,DMOR0030,Morfología TEO,3,2,TEO,Prof. José Reyes,,,
+10002,DMOR0030,Morfología LAB Sec1,3,2,LAB,Prof. José Reyes,10001,LAB KINE 1,1
+10003,DMOR0030,Morfología LAB Sec2,3,2,LAB,Ayud. Felipe Pérez,10001,LAB KINE 2,2
+10004,DBIO0031,Biomecánica I TEO,3,2,TEO,Prof. Luis Hernández,,,
+10005,DBIO0031,Biomecánica I LAB,3,2,LAB,Prof. Luis Hernández,10004,LAB KINE 1,1
+10006,DFIS0032,Fisiología I TEO,3,4,TEO,Dra. Carolina Muñoz,,,
+10007,DFIS0032,Fisiología I LAB Sec1,3,2,LAB,Dra. Carolina Muñoz,10006,LAB KINE 1,1
+10008,DFIS0032,Fisiología I LAB Sec2,3,2,LAB,Ayud. Felipe Pérez,10006,LAB KINE 2,2
+10009,DBIE0033,Bioética TEO,3,2,TEO,Dra. Patricia Martínez,,SALA 204,
+10010,DSAL0034,Salud Pública TEO,3,4,TEO,Dr. Andrés Valenzuela,,SALA 301,
+10011,DANA0020,Anatomía II TEO,2,4,TEO,Prof. Roberto Fuentes,,,
+10012,DANA0020,Anatomía II LAB Sec1,2,2,LAB,Prof. Roberto Fuentes,10011,LAB ANATOMIA,1
+10013,DANA0020,Anatomía II LAB Sec2,2,2,LAB,Ayud. Felipe Pérez,10011,LAB ANATOMIA,2
+10014,DANA0010,Anatomía I TEO,1,4,TEO,Prof. Roberto Fuentes,,,
+10015,DANA0010,Anatomía I LAB,1,2,LAB,Prof. Roberto Fuentes,10014,LAB ANATOMIA,1
+10016,DQUI0011,Química General TEO,1,2,TEO,,,SALA 201,
+10017,DQUI0011,Química General LAB,1,2,LAB,,10016,LAB QUIMICA,1
+10018,DKIN0051,Kinesiterapia I TEO,5,4,TEO,Dra. María Rivas,,,
+10019,DKIN0051,Kinesiterapia I SIM Sec1,5,4,SIM,Dra. María Rivas,10018,SIMULADOR 1,1
+10020,DKIN0051,Kinesiterapia I SIM Sec2,5,4,SIM,Prof. Claudia González,10018,SIMULADOR 2,2

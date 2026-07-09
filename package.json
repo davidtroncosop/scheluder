@@ -1,0 +1,37 @@
+{
+  "name": "scheduler-pro",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "db:create": "wrangler d1 create scheduler-pro-db",
+    "db:migrate": "wrangler d1 execute scheduler-pro-db --local --file=./migrations/0001_initial_schema.sql",
+    "db:seed": "wrangler d1 execute scheduler-pro-db --local --file=./migrations/0002_seed_data.sql",
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "pages:dev": "wrangler pages dev ./dist --d1=DB=scheduler-pro-db --local",
+    "deploy": "npm run build && wrangler pages deploy ./dist"
+  },
+  "dependencies": {
+    "@google/genai": "^1.35.0",
+    "hono": "^4.6.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "react-router-dom": "^7.12.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240620.0",
+    "@types/node": "^22.14.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0",
+    "wrangler": "^3.60.0"
+  }
+}

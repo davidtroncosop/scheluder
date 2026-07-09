@@ -1,0 +1,25 @@
+Codigo,Nombre,Nivel,Creditos,Tipo,Horas Teoricas,Horas Practicas,Prerequisitos,Descripcion
+DANA001,Anatomía Humana I,1,8,TEO-LAB,4,2,,Estudio de la estructura del cuerpo humano: sistema óseo muscular y articular
+DBIO001,Bioquímica,1,7,TEO-LAB,3,2,,Fundamentos de química aplicada a procesos biológicos
+DKIN001,Introducción a la Kinesiología,1,4,TEO,2,0,,Fundamentos y campos de acción de la kinesiología
+DING001,Inglés I,1,4,TEO,2,0,,Inglés básico para ciencias de la salud
+DFIS001,Física Aplicada,1,5,TEO-LAB,3,2,,Principios físicos aplicados al movimiento humano
+DANA002,Anatomía Humana II,2,8,TEO-LAB,4,2,DANA001,Estudio avanzado de sistemas: nervioso cardiovascular y respiratorio
+DFIS001,Fisiología I,2,8,TEO,4,0,DBIO001,Función de sistemas orgánicos y homeostasis
+DBME001,Biomecánica Básica,2,7,TEO-LAB,3,2,DFIS001,Análisis mecánico del movimiento humano
+DPSI001,Psicología General,2,4,TEO,2,0,,Bases psicológicas del comportamiento humano
+DMET001,Metodología de la Investigación,3,4,TEO,2,0,,Diseño y metodología de investigación científica
+DFIS002,Fisiología II,3,8,TEO,4,0,DFIS001,Fisiología del ejercicio y adaptación
+DKCR001,Kinesiología Cardiorrespiratoria,3,7,TEO-LAB,3,2,DFIS001;DANA002,Evaluación y tratamiento cardiopulmonar
+DKME001,Kinesiología Musculoesquelética I,3,7,TEO-LAB,3,2,DBME001;DANA002,Evaluación y tratamiento del sistema musculoesquelético
+DBIE001,Bioética en Salud,3,4,TEO,2,0,,Principios éticos en la práctica clínica
+DKNE001,Kinesiología Neurológica,4,8,TEO-LAB,4,2,DFIS002;DANA002,Rehabilitación de patologías neurológicas
+DKME002,Kinesiología Musculoesquelética II,4,7,TEO-LAB,3,2,DKME001,Tratamiento avanzado musculoesquelético
+DPRA001,Práctica Clínica I,4,10,TAL,0,6,DKCR001;DKME001,Práctica supervisada en centros de salud
+DSAL001,Salud Pública,4,4,TEO,2,0,,Epidemiología y políticas de salud
+DGER001,Kinesiología Geriátrica,5,6,TEO-LAB,2,2,DKNE001,Rehabilitación del adulto mayor
+DPED001,Kinesiología Pediátrica,5,6,TEO-LAB,2,2,DKNE001,Desarrollo motor y rehabilitación infantil
+DDEP001,Kinesiología Deportiva,5,6,TEO-LAB,2,2,DBME001;DKME002,Prevención y rehabilitación deportiva
+DPRA002,Práctica Clínica II,5,12,TAL,0,8,DPRA001,Práctica clínica avanzada
+DINT001,Internado I,5,16,TAL,0,12,DPRA002,Rotación hospitalaria supervisada
+DINT002,Internado II,5,16,TAL,0,12,DINT001,Rotación en atención primaria

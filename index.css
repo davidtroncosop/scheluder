@@ -1,0 +1,120 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-dark via-primary to-primary-light;
+  }
+}
+
+/* Base resets & typography */
+body {
+  @apply antialiased text-slate-800 dark:text-slate-200 transition-colors duration-300;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Premium Animations */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+@keyframes gradient-x {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-slide-up {
+  animation: slideInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-gradient-x {
+  background-size: 200% 200%;
+  animation: gradient-x 15s ease infinite;
+}
+
+/* Background Patterns */
+.pattern-diagonal {
+  background-image: repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.02) 0px, rgba(0, 0, 0, 0.02) 1px, transparent 1px, transparent 10px);
+}
+
+.dark .pattern-diagonal {
+  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.02) 0px, rgba(255, 255, 255, 0.02) 1px, transparent 1px, transparent 10px);
+}
+
+.pattern-dots {
+  background-image: radial-gradient(rgba(0, 0, 0, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.dark .pattern-dots {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+}
+
+.pattern-blocked {
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(239, 68, 68, 0.05) 10px, rgba(239, 68, 68, 0.05) 20px);
+}
+
+/* Interactive elements */
+.hover-lift {
+  @apply transition-transform duration-300 ease-out hover:-translate-y-1 hover:shadow-premium;
+}
+
+.nav-link {
+  @apply relative overflow-hidden transition-colors;
+}
+
+.nav-link::after {
+  content: '';
+  @apply absolute bottom-0 left-0 w-full h-0.5 bg-primary transform scale-x-0 transition-transform duration-300 origin-right;
+}
+
+.nav-link:hover::after {
+  @apply scale-x-100 origin-left;
+}
+
+/* Custom Grids */
+.scheduler-grid {
+  display: grid;
+  grid-template-columns: 80px repeat(5, 1fr);
+}
+
+/* Subtle selection */
+::selection {
+  @apply bg-primary/20 text-primary-dark dark:text-primary-light;
+}
