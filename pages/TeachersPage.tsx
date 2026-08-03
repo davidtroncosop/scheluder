@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/MainLayout';
 import * as dataStore from '../lib/dataStore';
+import api from '../services/api';
 
 interface Teacher {
   id: string;
@@ -31,7 +32,7 @@ const TeachersPage: React.FC = () => {
   const [availability, setAvailability] = useState<Availability[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState('2026-1');
+  const [selectedPeriod, setSelectedPeriod] = useState('per-2026-1');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -45,8 +46,24 @@ const TeachersPage: React.FC = () => {
   });
 
   // Fetch teachers
-  const loadTeachersList = () => {
+  const loadTeachersList = async () => {
     setLoading(true);
+    try {
+      const remoteTeachers = await api.getTeachers();
+      if (remoteTeachers.length > 0) {
+        const convertedTeachers = remoteTeachers.map(t => ({ ...t, is_active: Boolean(t.is_active), availability_raw: {} })) as Teacher[];
+        setTeachers(convertedTeachers);
+        dataStore.saveTeachers(remoteTeachers.map(t => ({
+          id: t.id, nombre: t.name, email: t.email || '', tipo_contrato: t.contract_type,
+          max_horas: t.max_hours_per_week,
+        })));
+        if (!selectedTeacherId) setSelectedTeacherId(convertedTeachers[0].id);
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // The explicit demo fallback below keeps the UI usable without a Worker.
+    }
     const localTeachers = dataStore.getTeachers();
     if (localTeachers.length > 0) {
       const convertedTeachers: Teacher[] = localTeachers.map((t, idx) => ({
@@ -193,7 +210,7 @@ const TeachersPage: React.FC = () => {
   };
 
   // Save Availability to local storage
-  const handleSaveAvailability = () => {
+  const handleSaveAvailability = async () => {
     if (!selectedTeacherId) return;
 
     const rawAvailability: Record<string, 'available' | 'preference' | 'blocked'> = {};
@@ -213,6 +230,11 @@ const TeachersPage: React.FC = () => {
         availability: rawAvailability
       };
       
+      try {
+        await api.updateTeacherAvailability(selectedTeacherId, availability.map(({ day_of_week, timeslot_id, status }) => ({ day_of_week, timeslot_id, status })));
+      } catch {
+        // Offline demo: persist the same state locally.
+      }
       dataStore.addOrUpdateTeacher(updatedTeacherData);
       
       // Update teachers list local state
@@ -246,7 +268,7 @@ const TeachersPage: React.FC = () => {
   };
 
   // Save teacher form submission
-  const handleSaveForm = (e: React.FormEvent) => {
+  const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) return;
 
@@ -260,8 +282,16 @@ const TeachersPage: React.FC = () => {
       availability: editingTeacher?.availability_raw || {},
     };
 
+    try {
+      await api.saveTeacher({
+        id, name: formData.name, email: formData.email, contract_type: formData.contract_type,
+        max_hours_per_week: Number(formData.max_hours_per_week), is_active: formData.is_active,
+      }, Boolean(editingTeacher));
+    } catch {
+      // Offline demo fallback.
+    }
     dataStore.addOrUpdateTeacher(newTeacher);
-    loadTeachersList();
+    await loadTeachersList();
     setIsModalOpen(false);
 
     if (!editingTeacher) {
@@ -270,8 +300,9 @@ const TeachersPage: React.FC = () => {
   };
 
   // Delete Teacher
-  const handleDeleteTeacher = (id: string, name: string) => {
+  const handleDeleteTeacher = async (id: string, name: string) => {
     if (window.confirm(`¿Está seguro de que desea eliminar al docente "${name}"?`)) {
+      try { await api.deleteTeacher(id); } catch { /* offline demo */ }
       dataStore.deleteTeacher(id);
       
       // Update list

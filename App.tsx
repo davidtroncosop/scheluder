@@ -1,8 +1,9 @@
 
 import React, { useState, Suspense, lazy } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from './lib/router';
 import LoginPage from './pages/LoginPage';
 import ErrorBoundary from './components/ErrorBoundary';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
 // Lazy-loaded pages (Code Splitting)
 const TableSelectionPage = lazy(() => import('./pages/TableSelectionPage'));
@@ -25,12 +26,22 @@ const PageLoader = () => (
 );
 
 const App: React.FC = () => {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') === 'dark');
 
   const toggleDarkMode = () => {
-    setIsDarkMode(!isDarkMode);
-    document.documentElement.classList.toggle('dark');
+    setIsDarkMode(current => {
+      const next = !current;
+      document.documentElement.classList.toggle('dark', next);
+      localStorage.setItem('theme', next ? 'dark' : 'light');
+      return next;
+    });
   };
+
+  React.useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDarkMode);
+  }, [isDarkMode]);
+
+  const protect = (page: React.ReactNode) => <ProtectedRoute>{page}</ProtectedRoute>;
 
   return (
     <ErrorBoundary>
@@ -42,21 +53,21 @@ const App: React.FC = () => {
               <Route path="/" element={<LoginPage onToggleDarkMode={toggleDarkMode} isDarkMode={isDarkMode} />} />
 
               {/* Import Flow */}
-              <Route path="/table-selection" element={<TableSelectionPage />} />
-              <Route path="/upload" element={<FileUploadPage />} />
-              <Route path="/mapping" element={<MappingPage />} />
+              <Route path="/table-selection" element={protect(<TableSelectionPage />)} />
+              <Route path="/upload" element={protect(<FileUploadPage />)} />
+              <Route path="/mapping" element={protect(<MappingPage />)} />
 
               {/* Main Application */}
-              <Route path="/scheduler" element={<SchedulerPage />} />
-              <Route path="/horarios" element={<HorariosPage />} />
+              <Route path="/scheduler" element={protect(<SchedulerPage />)} />
+              <Route path="/horarios" element={protect(<HorariosPage />)} />
 
               {/* Masters */}
-              <Route path="/teachers" element={<TeachersPage />} />
-              <Route path="/asignaturas" element={<AsignaturasPage />} />
-              <Route path="/salas" element={<SalasPage />} />
+              <Route path="/teachers" element={protect(<TeachersPage />)} />
+              <Route path="/asignaturas" element={protect(<AsignaturasPage />)} />
+              <Route path="/salas" element={protect(<SalasPage />)} />
 
               {/* Configuration */}
-              <Route path="/configuracion" element={<ConfiguracionPage />} />
+              <Route path="/configuracion" element={protect(<ConfiguracionPage />)} />
 
               {/* Fallback */}
               <Route path="*" element={<Navigate to="/" replace />} />

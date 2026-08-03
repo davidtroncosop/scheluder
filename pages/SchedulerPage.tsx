@@ -1,97 +1,20 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from '../lib/router';
 import * as dataStore from '../lib/dataStore';
 import ConflictPanel from '../components/ConflictPanel';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import api from '../services/api';
+import {
+  calculateHealth,
+  mapBackendAssignments,
+  type SchedulerAssignment as Assignment,
+  type SchedulerConflict as Conflict,
+  type SchedulerHealth as HealthMetrics,
+  type SchedulerSection as Section,
+  type SchedulerTimeslot as Timeslot,
+} from '../features/scheduler/model';
 
-// Types for the scheduler data
-interface Section {
-  id: string;
-  nrc: string;
-  subject_name: string;
-  subject_code: string;
-  level: number;
-  type: string;
-  hours_per_week: number;
-  teacher_name: string | null;
-  priority: number;
-  assigned_slots: number;
-}
-
-interface Assignment {
-  id: string;
-  section_id: string;
-  nrc: string;
-  subject_name: string;
-  subject_code: string;
-  level: number;
-  teacher_name: string | null;
-  room_name: string | null;
-  room_type: string | null;
-  timeslot_id: string;
-  timeslot_label: string;
-  day_of_week: number;
-  parallel_index: number; // 0, 1, 2, 3 representing the column within the day
-}
-
-export interface Conflict {
-  id: string;
-  type: string;
-  rule_code: string;
-  description: string;
-  subject_name: string;
-  nrc: string;
-  teacher_name: string | null;
-  timeslot_label: string;
-  day_of_week: number;
-  parallel_index: number;
-}
-
-interface Timeslot {
-  id: string;
-  label: string;
-  start_time: string;
-  end_time: string;
-  order_index: number;
-}
-
-interface HealthMetrics {
-  total_slots_required: number;
-  slots_assigned: number;
-  assignment_percentage: number;
-  critical_conflicts: number;
-  warning_conflicts: number;
-  health_score: number;
-}
-
-const mapBackendAssignments = (backendAsgs: any[]): Assignment[] => {
-  const sorted = [...backendAsgs].sort((a, b) => a.id.localeCompare(b.id));
-  const slotCounts: Record<string, number> = {};
-  
-  return sorted.map(asg => {
-    const key = `${asg.day_of_week}-${asg.timeslot_id}`;
-    const parallelIndex = slotCounts[key] || 0;
-    slotCounts[key] = parallelIndex + 1;
-    
-    return {
-      id: asg.id,
-      section_id: asg.section_id,
-      nrc: asg.nrc,
-      subject_name: asg.subject_name,
-      subject_code: asg.subject_code,
-      level: asg.level,
-      teacher_name: asg.teacher_name,
-      room_name: asg.room_name,
-      room_type: asg.room_type || 'TEO',
-      timeslot_id: asg.timeslot_id,
-      timeslot_label: asg.timeslot_label,
-      day_of_week: asg.day_of_week,
-      parallel_index: parallelIndex
-    };
-  });
-};
+export type { SchedulerConflict as Conflict } from '../features/scheduler/model';
 
 const SchedulerPage: React.FC = () => {
   const location = useLocation();
@@ -128,7 +51,7 @@ const SchedulerPage: React.FC = () => {
   const [selectedSection, setSelectedSection] = useState<Section | null>(null);
 
   // Period and workflow states
-  const [selectedPeriod, setSelectedPeriod] = useState('2026-1');
+  const [selectedPeriod, setSelectedPeriod] = useState('per-2026-1');
   const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
   const [scheduleStatus, setScheduleStatus] = useState<'draft' | 'review' | 'published'>('draft');
   const [showPeriodDropdown, setShowPeriodDropdown] = useState(false);
@@ -151,7 +74,7 @@ const SchedulerPage: React.FC = () => {
   const [auditLog, setAuditLog] = useState<Array<{
     id: string;
     timestamp: Date;
-    action: 'assign' | 'unassign' | 'resolve' | 'auto_assign' | 'publish' | 'save';
+    action: string;
     description: string;
     user: string;
   }>>([
@@ -268,9 +191,9 @@ const SchedulerPage: React.FC = () => {
   };
 
   const periods = [
-    { id: '2026-1', name: '2026 - Primer Semestre', status: 'active' },
-    { id: '2026-2', name: '2026 - Segundo Semestre', status: 'draft' },
-    { id: '2025-2', name: '2025 - Segundo Semestre', status: 'published' },
+    { id: 'per-2026-1', code: '2026-1', name: '2026 - Primer Semestre', status: 'active' },
+    { id: 'per-2026-2', code: '2026-2', name: '2026 - Segundo Semestre', status: 'draft' },
+    { id: 'per-2025-2', code: '2025-2', name: '2025 - Segundo Semestre', status: 'published' },
   ];
 
   const statusLabels = {
@@ -307,6 +230,12 @@ const SchedulerPage: React.FC = () => {
         });
 
         const conflictsRes = await fetch(`/api/conflicts?resolved=false`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const statusRes = await fetch(`/api/schedule/status?period_id=${encodeURIComponent(selectedPeriod)}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const auditRes = await fetch(`/api/audit?period_id=${encodeURIComponent(selectedPeriod)}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
@@ -349,6 +278,20 @@ const SchedulerPage: React.FC = () => {
               parallel_index: 0 // Default
             }));
             setConflicts(mappedConflicts);
+          }
+          if (statusRes.ok) {
+            const status = await statusRes.json() as { status: 'draft' | 'published' };
+            setScheduleStatus(status.status);
+          }
+          if (auditRes.ok) {
+            const rows = await auditRes.json() as Array<Record<string, any>>;
+            setAuditLog(rows.map(row => ({
+              id: row.id,
+              timestamp: new Date(row.created_at),
+              action: String(row.action || '').toLowerCase(),
+              description: `${row.action} · ${row.entity_type}`,
+              user: row.user_name || 'Usuario demo',
+            })));
           }
           return;
         }
@@ -469,23 +412,7 @@ const SchedulerPage: React.FC = () => {
 
   // Recalculate metrics dynamically based on actual state
   useEffect(() => {
-    const totalRequired = sections.reduce((acc, s) => acc + (s.hours_per_week || 0), 0) || 1;
-    const assignedCount = assignments.length;
-    const criticalCount = conflicts.filter(c => c.type === 'CRITICAL').length;
-    const warningCount = conflicts.filter(c => c.type === 'WARNING').length;
-
-    const assignmentRatio = assignedCount / totalRequired;
-    const penalty = (criticalCount * 15) + (warningCount * 5);
-    const healthScore = Math.max(0, Math.min(100, Math.round((assignmentRatio * 100) - penalty)));
-
-    setMetrics({
-      total_slots_required: totalRequired,
-      slots_assigned: assignedCount,
-      assignment_percentage: Math.round((assignedCount / totalRequired) * 100),
-      critical_conflicts: criticalCount,
-      warning_conflicts: warningCount,
-      health_score: healthScore,
-    });
+    setMetrics(calculateHealth(sections, assignments, conflicts));
   }, [assignments, sections, conflicts]);
 
   // Get unassigned sections
@@ -757,12 +684,24 @@ const SchedulerPage: React.FC = () => {
     });
   };
 
-  const saveEditedAssignment = () => {
+  const saveEditedAssignment = async () => {
     if (!editingAssignment) return;
 
     const roomsList = dataStore.getRooms();
     const targetRoom = roomsList.find(r => r.nombre === editFormData.room_name);
     const targetTeacher = teachers.find(t => t.nombre === editFormData.teacher_name);
+
+    if (dataStore.getAuthToken()) {
+      try {
+        await api.updateAssignment(editingAssignment.id, { room_id: targetRoom?.id || null, teacher_id: targetTeacher?.id || null });
+        await loadScheduleData();
+        setEditingAssignment(null);
+        return;
+      } catch (updateError) {
+        setError(updateError instanceof Error ? updateError.message : 'No fue posible actualizar la asignación');
+        return;
+      }
+    }
 
     const updatedAsgs = assignments.map(a => {
       if (a.id === editingAssignment.id) {
@@ -813,7 +752,7 @@ const SchedulerPage: React.FC = () => {
     setIsSectionModalOpen(true);
   };
 
-  const saveEditedSection = () => {
+  const saveEditedSection = async () => {
     const targetSub = allSubjects.find(s => s.id === sectionFormData.subject_id);
     if (!targetSub || !sectionFormData.nrc.trim()) {
       alert('Por favor seleccione una asignatura e ingrese el NRC.');
@@ -833,6 +772,26 @@ const SchedulerPage: React.FC = () => {
       periodo: selectedPeriod,
     };
 
+    if (dataStore.getAuthToken()) {
+      const teacher = teachers.find(item => item.nombre === sectionFormData.teacher_name);
+      try {
+        await api.saveSection({
+          id,
+          subject_id: sectionFormData.subject_id,
+          teacher_id: teacher?.id || null,
+          nrc: sectionFormData.nrc,
+          type: sectionFormData.type,
+          hours_per_week: Number(sectionFormData.hours_per_week),
+        }, Boolean(editingSection));
+        await loadScheduleData();
+        setIsSectionModalOpen(false);
+        return;
+      } catch (sectionError) {
+        setError(sectionError instanceof Error ? sectionError.message : 'No fue posible guardar la sección');
+        return;
+      }
+    }
+
     dataStore.addOrUpdateSection(newSectionData);
     
     // Refresh sections state
@@ -840,8 +799,18 @@ const SchedulerPage: React.FC = () => {
     setIsSectionModalOpen(false);
   };
 
-  const handleDeleteSection = (id: string, name: string) => {
+  const handleDeleteSection = async (id: string, name: string) => {
     if (window.confirm(`¿Está seguro de que desea eliminar la sección "${name}"? Esto también removerá cualquier horario programado para ella.`)) {
+      if (dataStore.getAuthToken()) {
+        try {
+          await api.deleteSection(id);
+          await loadScheduleData();
+          return;
+        } catch (deleteError) {
+          setError(deleteError instanceof Error ? deleteError.message : 'No fue posible eliminar la sección');
+          return;
+        }
+      }
       dataStore.deleteSection(id);
       
       const localAsgsStr = localStorage.getItem(`scheduler_assignments_${selectedPeriod}`);
@@ -1036,7 +1005,18 @@ const SchedulerPage: React.FC = () => {
     alert(`✅ Auto-asignados: ${count} slots`);
   };
 
-  const resolveConflict = (conflict: Conflict) => {
+  const resolveConflict = async (conflict: Conflict) => {
+    if (dataStore.getAuthToken() && conflict.id) {
+      try {
+        await api.resolveConflict(conflict.id, true);
+        await loadScheduleData();
+        setSelectedConflict(null);
+        return;
+      } catch (resolveError) {
+        setError(resolveError instanceof Error ? resolveError.message : 'No fue posible resolver el conflicto');
+        return;
+      }
+    }
     const section = sections.find(s => s.nrc === conflict.nrc);
     if (!section) return;
     const alternatives = getBestSlotsForSection(section);
@@ -1071,6 +1051,22 @@ const SchedulerPage: React.FC = () => {
     setConflicts(prev => prev.filter(c => c.id !== conflict.id));
     setHasChanges(true);
     setSelectedConflict(null);
+  };
+
+  const resolveAllConflicts = async () => {
+    if (!dataStore.getAuthToken()) {
+      for (const conflict of [...conflicts]) await resolveConflict(conflict);
+      return;
+    }
+    setSaving(true);
+    try {
+      for (const conflict of conflicts) await api.resolveConflict(conflict.id, true);
+      await loadScheduleData();
+    } catch (resolveError) {
+      setError(resolveError instanceof Error ? resolveError.message : 'No fue posible resolver todos los conflictos');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
@@ -1127,6 +1123,10 @@ const SchedulerPage: React.FC = () => {
 
     setSaving(true);
     try {
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ]);
       // Create canvas from DOM element
       const canvas = await html2canvas(element, {
         scale: 2, // higher quality
@@ -1159,14 +1159,19 @@ const SchedulerPage: React.FC = () => {
   };
 
   // Publish handler
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (criticalCount > 0) {
       alert('No se puede publicar: hay conflictos críticos pendientes');
       return;
     }
-    setScheduleStatus('published');
-    addAuditEntry('publish', `Horario ${selectedPeriod} publicado oficialmente`);
-    alert('✅ Horario publicado exitosamente');
+    try {
+      if (dataStore.getAuthToken()) await api.publishSchedule(selectedPeriod);
+      setScheduleStatus('published');
+      addAuditEntry('publish', `Horario ${selectedPeriod} publicado oficialmente`);
+      alert('✅ Horario publicado exitosamente');
+    } catch (publishError) {
+      setError(publishError instanceof Error ? publishError.message : 'No fue posible publicar el horario');
+    }
   };
 
   return (
@@ -1190,7 +1195,7 @@ const SchedulerPage: React.FC = () => {
               className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
             >
               <span className="material-symbols-outlined text-[16px]">calendar_month</span>
-              <span>{selectedPeriod}</span>
+              <span>{periods.find(period => period.id === selectedPeriod)?.code || selectedPeriod}</span>
               <span className="material-symbols-outlined text-[16px]">expand_more</span>
             </button>
 
@@ -2020,7 +2025,16 @@ const SchedulerPage: React.FC = () => {
                                 return (
                                   <div
                                     key={`${slot.id}-${dayOfWeek}-${parallelIdx}`}
+                                    role={sectionToCheck && !assignment ? 'button' : undefined}
+                                    tabIndex={sectionToCheck && !assignment ? 0 : undefined}
+                                    aria-label={sectionToCheck && !assignment ? `Asignar ${sectionToCheck.subject_name} el ${days[dayOfWeek - 1]} en ${slot.label}, paralelo ${parallelIdx + 1}` : undefined}
                                     onClick={() => sectionToCheck && !assignment && !isTeacherBlocked && handleAssignToSlot(slot.id, dayOfWeek, parallelIdx)}
+                                    onKeyDown={event => {
+                                      if ((event.key === 'Enter' || event.key === ' ') && sectionToCheck && !assignment && !isTeacherBlocked) {
+                                        event.preventDefault();
+                                        handleAssignToSlot(slot.id, dayOfWeek, parallelIdx);
+                                      }
+                                    }}
                                     onDragOver={(e) => handleDragOver(e, slot.id, dayOfWeek, parallelIdx)}
                                     onDragLeave={() => setDropTarget(null)}
                                     onDrop={(e) => !isTeacherBlocked && handleDrop(e, slot.id, dayOfWeek, parallelIdx)}
@@ -2132,9 +2146,10 @@ const SchedulerPage: React.FC = () => {
                 </div>
               </div>{/* Conflict Alert Bottom Bar */}
               {conflicts.length > 0 && !showConflictsPanel && (
-                <div
+                <button
+                  type="button"
                   onClick={() => setShowConflictsPanel(true)}
-                  className="absolute bottom-4 left-4 bg-white dark:bg-[#1a2430] rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center gap-3 cursor-pointer hover:shadow-xl transition-all z-30"
+                  className="absolute bottom-4 left-4 bg-white dark:bg-[#1a2430] rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center gap-3 hover:shadow-xl transition-all z-30 text-left"
                 >
                   <div className="size-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
                     <span className="material-symbols-outlined text-red-500 text-lg">error</span>
@@ -2144,7 +2159,7 @@ const SchedulerPage: React.FC = () => {
                     <p className="text-[10px] text-slate-500">Click para ver detalles</p>
                   </div>
                   <span className="material-symbols-outlined text-slate-400 text-lg">chevron_right</span>
-                </div>
+                </button>
               )}
             </div>
 
@@ -2155,6 +2170,7 @@ const SchedulerPage: React.FC = () => {
                 days={days}
                 setShowConflictsPanel={setShowConflictsPanel}
                 setSelectedConflict={setSelectedConflict}
+                onResolveAll={resolveAllConflicts}
               />
             )}
           </main>
@@ -2163,7 +2179,7 @@ const SchedulerPage: React.FC = () => {
 
       {/* Conflict Detail Modal */}
       {selectedConflict && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="conflict-dialog-title" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-[#1a2430] rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
             {/* Modal Header */}
             <div className={`p-5 ${selectedConflict.type === 'CRITICAL' ? 'bg-red-500' : 'bg-amber-500'}`}>
@@ -2173,12 +2189,13 @@ const SchedulerPage: React.FC = () => {
                     {selectedConflict.type === 'CRITICAL' ? 'error' : 'warning'}
                   </span>
                   <div>
-                    <h3 className="text-lg font-bold text-white">Detalle del Conflicto</h3>
+                    <h3 id="conflict-dialog-title" className="text-lg font-bold text-white">Detalle del Conflicto</h3>
                     <p className="text-white/80 text-sm">{selectedConflict.rule_code}</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setSelectedConflict(null)}
+                  aria-label="Cerrar detalle del conflicto"
                   className="p-1 hover:bg-white/20 rounded transition-colors"
                 >
                   <span className="material-symbols-outlined text-white">close</span>
@@ -2256,14 +2273,14 @@ const SchedulerPage: React.FC = () => {
 
       {/* Export Modal */}
       {showExportModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div role="dialog" aria-modal="true" aria-label="Exportar horario" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-[#1a2430] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <span className="material-symbols-outlined text-primary text-2xl">download</span>
                 <h3 className="text-lg font-bold text-slate-800 dark:text-white">Exportar Horario</h3>
               </div>
-              <button onClick={() => setShowExportModal(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
+              <button aria-label="Cerrar exportación" onClick={() => setShowExportModal(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
                 <span className="material-symbols-outlined text-slate-400">close</span>
               </button>
             </div>
@@ -2311,14 +2328,14 @@ const SchedulerPage: React.FC = () => {
 
       {/* Audit Panel */}
       {showAuditPanel && (
-        <div className="fixed inset-0 bg-black/50 flex items-end justify-end z-50">
+        <div role="dialog" aria-modal="true" aria-label="Historial de auditoría" className="fixed inset-0 bg-black/50 flex items-end justify-end z-50">
           <div className="bg-white dark:bg-[#1a2430] w-full max-w-md h-full shadow-2xl flex flex-col">
             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <span className="material-symbols-outlined text-primary">history</span>
                 <h3 className="text-lg font-bold text-slate-800 dark:text-white">Historial de Cambios</h3>
               </div>
-              <button onClick={() => setShowAuditPanel(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
+              <button aria-label="Cerrar auditoría" onClick={() => setShowAuditPanel(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
                 <span className="material-symbols-outlined text-slate-400">close</span>
               </button>
             </div>
@@ -2387,7 +2404,7 @@ const SchedulerPage: React.FC = () => {
 
       {/* Room Selector Modal */}
       {showRoomSelector && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div role="dialog" aria-modal="true" aria-label="Seleccionar sala" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-primary/5">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -2444,7 +2461,7 @@ const SchedulerPage: React.FC = () => {
 
       {/* Edit Assignment / Negotiation Modal */}
       {editingAssignment && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+        <div role="dialog" aria-modal="true" aria-label="Editar asignación" className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 relative overflow-hidden">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -2526,7 +2543,7 @@ const SchedulerPage: React.FC = () => {
 
       {/* Section Creation/Edition Modal */}
       {isSectionModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+        <div role="dialog" aria-modal="true" aria-label={editingSection ? 'Editar sección' : 'Crear sección'} className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 relative overflow-hidden">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -2535,6 +2552,7 @@ const SchedulerPage: React.FC = () => {
               </h3>
               <button 
                 onClick={() => setIsSectionModalOpen(false)}
+                aria-label="Cerrar formulario de sección"
                 className="size-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-all"
               >
                 <span className="material-symbols-outlined text-lg">close</span>
@@ -2572,7 +2590,7 @@ const SchedulerPage: React.FC = () => {
                     placeholder="Ej: 23456"
                     value={sectionFormData.nrc}
                     onChange={(e) => setSectionFormData({ ...sectionFormData, nrc: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-805 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
                   />
                 </div>
 
@@ -2583,7 +2601,7 @@ const SchedulerPage: React.FC = () => {
                   <select
                     value={sectionFormData.type}
                     onChange={(e) => setSectionFormData({ ...sectionFormData, type: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-805 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
                   >
                     <option value="TEO">Teórica (TEO)</option>
                     <option value="LAB">Laboratorio (LAB)</option>
@@ -2604,7 +2622,7 @@ const SchedulerPage: React.FC = () => {
                     max={12}
                     value={sectionFormData.level}
                     onChange={(e) => setSectionFormData({ ...sectionFormData, level: parseInt(e.target.value) || 1 })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-805 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
                   />
                 </div>
 
@@ -2619,7 +2637,7 @@ const SchedulerPage: React.FC = () => {
                     max={12}
                     value={sectionFormData.hours_per_week}
                     onChange={(e) => setSectionFormData({ ...sectionFormData, hours_per_week: parseInt(e.target.value) || 2 })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-805 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
                   />
                 </div>
               </div>

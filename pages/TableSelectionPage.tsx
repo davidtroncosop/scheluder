@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link } from '../lib/router';
 import SharedHeader from '../components/SharedHeader';
 
 const TableSelectionPage: React.FC = () => {

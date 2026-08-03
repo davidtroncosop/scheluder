@@ -16,7 +16,7 @@ const HorariosPage: React.FC = () => {
     const [subjects, setSubjects] = useState<Subject[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
-    const [selectedPeriod, setSelectedPeriod] = useState('2026-1');
+    const [selectedPeriod, setSelectedPeriod] = useState('per-2026-1');
 
     useEffect(() => {
         const fetchSubjects = async () => {

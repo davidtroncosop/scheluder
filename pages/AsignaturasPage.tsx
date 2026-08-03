@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/MainLayout';
 import * as dataStore from '../lib/dataStore';
+import api from '../services/api';
 
 interface Subject {
     id: string;
@@ -17,7 +18,7 @@ const AsignaturasPage: React.FC = () => {
     const [subjects, setSubjects] = useState<Subject[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
-    const [selectedPeriod, setSelectedPeriod] = useState('2026-1');
+    const [selectedPeriod, setSelectedPeriod] = useState('per-2026-1');
 
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -30,8 +31,18 @@ const AsignaturasPage: React.FC = () => {
         career_id: 'car-default-001',
     });
 
-    const loadSubjectsList = () => {
+    const loadSubjectsList = async () => {
         setLoading(true);
+        try {
+            const remote = await api.getSubjects();
+            if (remote.length > 0) {
+                const converted = remote as Subject[];
+                setSubjects(converted);
+                dataStore.saveSubjects(remote.map(s => ({ id: s.id, codigo: s.code, nombre: s.name, nivel: s.level, creditos: s.credits, carrera: s.career_id })));
+                setLoading(false);
+                return;
+            }
+        } catch { /* offline demo fallback */ }
         const localSubjects = dataStore.getSubjects();
         if (localSubjects.length > 0) {
             const converted: Subject[] = localSubjects.map(s => ({
@@ -98,7 +109,7 @@ const AsignaturasPage: React.FC = () => {
         setIsModalOpen(true);
     };
 
-    const handleSaveSubject = (e: React.FormEvent) => {
+    const handleSaveSubject = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name.trim() || !formData.code.trim()) return;
 
@@ -112,13 +123,22 @@ const AsignaturasPage: React.FC = () => {
             carrera: formData.career_id,
         };
 
+        try {
+            await api.saveSubject({ id, code: newSubjectData.codigo, name: newSubjectData.nombre, level: newSubjectData.nivel, credits: newSubjectData.creditos, career_id: newSubjectData.carrera }, Boolean(editingSubject));
+        } catch { /* offline demo fallback */ }
         dataStore.addOrUpdateSubject(newSubjectData);
-        loadSubjectsList();
+        await loadSubjectsList();
         setIsModalOpen(false);
     };
 
-    const handleDeleteSubject = (id: string, name: string) => {
+    const handleDeleteSubject = async (id: string, name: string) => {
         if (window.confirm(`¿Está seguro de que desea eliminar la asignatura "${name}"?`)) {
+            try { await api.deleteSubject(id); } catch (error) {
+                if (error instanceof Error && error.message.includes('secciones asociadas')) {
+                    alert(error.message);
+                    return;
+                }
+            }
             dataStore.deleteSubject(id);
             setSubjects(prev => prev.filter(s => s.id !== id));
         }

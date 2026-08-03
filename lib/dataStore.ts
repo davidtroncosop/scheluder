@@ -30,7 +30,7 @@ export interface ImportedSubject {
 export interface ImportedRoom {
     id: string;
     nombre: string;
-    tipo: 'TEO' | 'LAB' | 'SIM' | 'AUD';
+    tipo: 'TEO' | 'LAB' | 'SIM' | 'TAL' | 'AUD';
     capacidad: number;
     edificio?: string;
     asignaturas_permitidas?: string[]; // Códigos de asignaturas que pueden usar esta sala
@@ -109,15 +109,33 @@ export const syncWithRemote = async (periodId: string = 'per-2026-1') => {
     try {
         // Load teachers
         const tRes = await apiFetch('/api/teachers');
-        if (tRes && tRes.ok) saveTeachers(await tRes.json());
+        if (tRes && tRes.ok) {
+            const rows = await tRes.json() as Array<Record<string, any>>;
+            saveTeachers(rows.map(t => ({
+                id: t.id, nombre: t.name, email: t.email || '', departamento: t.department || '',
+                tipo_contrato: t.contract_type, max_horas: t.max_hours_per_week,
+            })));
+        }
 
         // Load rooms
         const rRes = await apiFetch('/api/rooms');
-        if (rRes && rRes.ok) saveRooms(await rRes.json());
+        if (rRes && rRes.ok) {
+            const rows = await rRes.json() as Array<Record<string, any>>;
+            saveRooms(rows.map(r => ({
+                id: r.id, nombre: r.name, tipo: r.type, capacidad: r.capacity,
+                edificio: r.building || '',
+            })));
+        }
 
         // Load subjects
         const sRes = await apiFetch('/api/subjects');
-        if (sRes && sRes.ok) saveSubjects(await sRes.json());
+        if (sRes && sRes.ok) {
+            const rows = await sRes.json() as Array<Record<string, any>>;
+            saveSubjects(rows.map(s => ({
+                id: s.id, codigo: s.code, nombre: s.name, nivel: s.level,
+                creditos: s.credits, carrera: s.career_id,
+            })));
+        }
 
         // Load sections
         const secRes = await apiFetch(`/api/sections?period_id=${periodId}`);
@@ -306,9 +324,9 @@ export const getCustomPeriods = (): LocalPeriod[] => {
     const list = getFromStorage<LocalPeriod>(KEYS.PERIODS);
     if (list.length > 0) return list;
     return [
-        { id: '1', name: '2026-1', status: 'Activo', startDate: '2026-03-01', endDate: '2026-07-15' },
-        { id: '2', name: '2025-2', status: 'Archivado', startDate: '2025-08-01', endDate: '2025-12-15' },
-        { id: '3', name: '2026-2', status: 'Borrador', startDate: '2026-08-01', endDate: '2026-12-15' },
+        { id: 'per-2026-1', name: '2026-1', status: 'Activo', startDate: '2026-03-01', endDate: '2026-07-15' },
+        { id: 'per-2025-2', name: '2025-2', status: 'Archivado', startDate: '2025-08-01', endDate: '2025-12-15' },
+        { id: 'per-2026-2', name: '2026-2', status: 'Borrador', startDate: '2026-08-01', endDate: '2026-12-15' },
     ];
 };
 
@@ -317,9 +335,9 @@ export const saveCustomPeriods = (periods: LocalPeriod[]): void => saveToStorage
 // Current Period
 export const getCurrentPeriod = (): string => {
     try {
-        return localStorage.getItem(KEYS.PERIOD) || '2026-1';
+        return localStorage.getItem(KEYS.PERIOD) || 'per-2026-1';
     } catch (e) {
-        return '2026-1';
+        return 'per-2026-1';
     }
 };
 export const setCurrentPeriod = (period: string): void => {

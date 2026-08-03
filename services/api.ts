@@ -12,6 +12,7 @@ import type {
     HealthMetrics,
     LoginResponse,
 } from '../types';
+import { session, type SessionUser } from '../lib/session';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -19,8 +20,7 @@ class SchedulerAPI {
     private token: string | null = null;
 
     constructor() {
-        // Load token from localStorage
-        this.token = localStorage.getItem('scheduler_token');
+        this.token = session.getToken();
     }
 
     private async request<T>(
@@ -60,21 +60,18 @@ class SchedulerAPI {
         });
 
         this.token = data.token;
-        localStorage.setItem('scheduler_token', data.token);
-        localStorage.setItem('scheduler_user', JSON.stringify(data.user));
+        session.save(data.token, data.user as SessionUser);
 
         return data;
     }
 
     logout(): void {
         this.token = null;
-        localStorage.removeItem('scheduler_token');
-        localStorage.removeItem('scheduler_user');
+        session.clear();
     }
 
-    getUser(): any {
-        const user = localStorage.getItem('scheduler_user');
-        return user ? JSON.parse(user) : null;
+    getUser(): SessionUser | null {
+        return session.getUser();
     }
 
     isAuthenticated(): boolean {
@@ -87,6 +84,18 @@ class SchedulerAPI {
 
     async getCareers(): Promise<Career[]> {
         return this.request<Career[]>('/careers');
+    }
+
+    async getPeriods(): Promise<Array<{ id: string; code: string; name: string; is_active: number | boolean }>> {
+        return this.request('/periods');
+    }
+
+    async getSettings(careerId?: string): Promise<Record<string, unknown>> {
+        return this.request(`/settings${careerId ? `?career_id=${encodeURIComponent(careerId)}` : ''}`);
+    }
+
+    async saveSettings(settings: Record<string, unknown>): Promise<{ success: boolean }> {
+        return this.request('/settings', { method: 'PUT', body: JSON.stringify(settings) });
     }
 
     // =============================================
@@ -111,12 +120,32 @@ class SchedulerAPI {
         });
     }
 
+    async saveTeacher(teacher: Record<string, unknown>, editing = false): Promise<{ id?: string; success?: boolean }> {
+        return this.request(editing ? `/teachers/${teacher.id}` : '/teachers', {
+            method: editing ? 'PUT' : 'POST', body: JSON.stringify(teacher),
+        });
+    }
+
+    async deleteTeacher(id: string): Promise<{ success: boolean }> {
+        return this.request(`/teachers/${id}`, { method: 'DELETE' });
+    }
+
     // =============================================
     // ROOMS
     // =============================================
 
     async getRooms(): Promise<Room[]> {
         return this.request<Room[]>('/rooms');
+    }
+
+    async saveRoom(room: Record<string, unknown>, editing = false): Promise<{ id?: string; success?: boolean }> {
+        return this.request(editing ? `/rooms/${room.id}` : '/rooms', {
+            method: editing ? 'PUT' : 'POST', body: JSON.stringify(room),
+        });
+    }
+
+    async deleteRoom(id: string): Promise<{ success: boolean }> {
+        return this.request(`/rooms/${id}`, { method: 'DELETE' });
     }
 
     // =============================================
@@ -126,6 +155,16 @@ class SchedulerAPI {
     async getSubjects(level?: number): Promise<Subject[]> {
         const query = level ? `?level=${level}` : '';
         return this.request<Subject[]>(`/subjects${query}`);
+    }
+
+    async saveSubject(subject: Record<string, unknown>, editing = false): Promise<{ id?: string; success?: boolean }> {
+        return this.request(editing ? `/subjects/${subject.id}` : '/subjects', {
+            method: editing ? 'PUT' : 'POST', body: JSON.stringify(subject),
+        });
+    }
+
+    async deleteSubject(id: string): Promise<{ success: boolean }> {
+        return this.request(`/subjects/${id}`, { method: 'DELETE' });
     }
 
     async getSections(assigned?: boolean): Promise<SectionWithDetails[]> {
@@ -142,6 +181,16 @@ class SchedulerAPI {
 
     async getAssignedSections(): Promise<SectionWithDetails[]> {
         return this.getSections(true);
+    }
+
+    async saveSection(section: Record<string, unknown>, editing = false): Promise<{ id?: string; success?: boolean }> {
+        return this.request(editing ? `/sections/${section.id}` : '/sections', {
+            method: editing ? 'PUT' : 'POST', body: JSON.stringify(section),
+        });
+    }
+
+    async deleteSection(id: string): Promise<{ success: boolean }> {
+        return this.request(`/sections/${id}`, { method: 'DELETE' });
     }
 
     // =============================================
@@ -178,6 +227,22 @@ class SchedulerAPI {
         return this.request<{ success: boolean }>(`/schedule/${assignmentId}`, {
             method: 'DELETE',
         });
+    }
+
+    async updateAssignment(id: string, changes: Record<string, unknown>): Promise<{ success: boolean }> {
+        return this.request(`/schedule/${id}`, { method: 'PUT', body: JSON.stringify(changes) });
+    }
+
+    async getScheduleStatus(periodId: string): Promise<{ status: 'draft' | 'published' }> {
+        return this.request(`/schedule/status?period_id=${encodeURIComponent(periodId)}`);
+    }
+
+    async publishSchedule(periodId: string): Promise<{ success: boolean; status: 'published' }> {
+        return this.request('/schedule/publish', { method: 'POST', body: JSON.stringify({ period_id: periodId }) });
+    }
+
+    async getAudit(periodId: string): Promise<Array<Record<string, unknown>>> {
+        return this.request(`/audit?period_id=${encodeURIComponent(periodId)}`);
     }
 
     // =============================================

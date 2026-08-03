@@ -20,8 +20,8 @@ Sistema que transforma el caos de la planificación de horarios en un proceso de
 ## 🛠️ Instalación Local
 
 ```bash
-# 1. Instalar dependencias
-npm install
+# 1. Instalar dependencias reproducibles
+npm ci
 
 # 2. Crear base de datos D1 local
 npm run db:migrate
@@ -32,7 +32,7 @@ npm run db:seed
 # Terminal 1: Vite (Frontend)
 npm run dev
 
-# Terminal 2: Wrangler Pages (Backend + D1)
+# Terminal 2: Wrangler Pages (Backend + D1; compila antes de iniciar)
 npm run pages:dev
 ```
 
@@ -62,14 +62,12 @@ database_id = "TU-DATABASE-ID-AQUI"
 ```bash
 npx wrangler d1 execute scheduler-pro-db --remote --file=./migrations/0001_initial_schema.sql
 npx wrangler d1 execute scheduler-pro-db --remote --file=./migrations/0002_seed_data.sql
+npx wrangler d1 execute scheduler-pro-db --remote --file=./migrations/0003_app_settings.sql
 ```
 
-### 3. Configurar secretos
+### 3. Autenticación demo
 
-```bash
-npx wrangler secret put JWT_SECRET
-# Ingresa una clave secreta segura
-```
+La autenticación es deliberadamente demostrativa: solo acepta las cuentas sembradas y cualquier contraseña. No uses credenciales reales. Antes de convertir el proyecto a producción se debe reemplazar este flujo y configurar `JWT_SECRET` como secreto de Cloudflare.
 
 ### 4. Desplegar a Cloudflare Pages
 
@@ -162,7 +160,14 @@ Base: 100 pts
 | admin@scheduler.pro | Administrador |
 | coordinador@kine.edu | Coordinador Kinesiología |
 
-> En desarrollo, cualquier contraseña funciona.
+> La autenticación es demo en todos los entornos: cualquier contraseña funciona únicamente para estas cuentas sembradas.
+
+## ✅ Verificación
+
+```bash
+npm run check       # TypeScript + pruebas + build
+npm audit           # Debe finalizar sin vulnerabilidades conocidas
+```
 
 ## 📝 Licencia
 

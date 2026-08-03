@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/MainLayout';
 import * as dataStore from '../lib/dataStore';
+import api from '../services/api';
 
 interface Room {
     id: string;
@@ -18,7 +19,7 @@ const SalasPage: React.FC = () => {
     const [rooms, setRooms] = useState<Room[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedType, setSelectedType] = useState<string | null>(null);
-    const [selectedPeriod, setSelectedPeriod] = useState('2026-1');
+    const [selectedPeriod, setSelectedPeriod] = useState('per-2026-1');
 
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -58,8 +59,18 @@ const SalasPage: React.FC = () => {
         return roomTypeNames[upperType] || 'Teórica';
     };
 
-    const loadRoomsList = () => {
+    const loadRoomsList = async () => {
         setLoading(true);
+        try {
+            const remote = await api.getRooms();
+            if (remote.length > 0) {
+                const converted = remote.map(r => ({ ...r, is_shared: Boolean(r.is_shared) })) as Room[];
+                setRooms(converted);
+                dataStore.saveRooms(remote.map(r => ({ id: r.id, nombre: r.name, tipo: r.type, capacidad: r.capacity, edificio: r.building || '' })));
+                setLoading(false);
+                return;
+            }
+        } catch { /* offline demo fallback */ }
         // First try localStorage
         const localRooms = dataStore.getRooms();
         if (localRooms.length > 0) {
@@ -128,7 +139,7 @@ const SalasPage: React.FC = () => {
         setIsModalOpen(true);
     };
 
-    const handleSaveRoom = (e: React.FormEvent) => {
+    const handleSaveRoom = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name.trim()) return;
 
@@ -141,13 +152,17 @@ const SalasPage: React.FC = () => {
             edificio: formData.building,
         };
 
+        try {
+            await api.saveRoom({ id, name: formData.name, building: formData.building, floor: formData.floor, type: formData.type, capacity: formData.capacity, is_shared: formData.is_shared }, Boolean(editingRoom));
+        } catch { /* offline demo fallback */ }
         dataStore.addOrUpdateRoom(newRoomData);
-        loadRoomsList();
+        await loadRoomsList();
         setIsModalOpen(false);
     };
 
-    const handleDeleteRoom = (id: string, name: string) => {
+    const handleDeleteRoom = async (id: string, name: string) => {
         if (window.confirm(`¿Está seguro de que desea eliminar la sala "${name}"?`)) {
+            try { await api.deleteRoom(id); } catch { /* offline demo */ }
             dataStore.deleteRoom(id);
             setRooms(prev => prev.filter(r => r.id !== id));
         }

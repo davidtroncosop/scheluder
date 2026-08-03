@@ -6,6 +6,7 @@ interface ConflictPanelProps {
     days: string[];
     setShowConflictsPanel: (show: boolean) => void;
     setSelectedConflict: (conflict: Conflict) => void;
+    onResolveAll: () => void;
 }
 
 const ConflictPanel: React.FC<ConflictPanelProps> = ({
@@ -13,6 +14,7 @@ const ConflictPanel: React.FC<ConflictPanelProps> = ({
     days,
     setShowConflictsPanel,
     setSelectedConflict,
+    onResolveAll,
 }) => {
     return (
         <aside className="w-80 bg-white dark:bg-[#111418] border-l border-slate-200 dark:border-slate-800 flex flex-col shrink-0 overflow-hidden">
@@ -23,6 +25,7 @@ const ConflictPanel: React.FC<ConflictPanelProps> = ({
                 </div>
                 <button
                     onClick={() => setShowConflictsPanel(false)}
+                    aria-label="Cerrar panel de conflictos"
                     className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
                 >
                     <span className="material-symbols-outlined text-slate-400 text-lg">close</span>
@@ -38,9 +41,10 @@ const ConflictPanel: React.FC<ConflictPanelProps> = ({
                             Críticos ({conflicts.filter(c => c.type === 'CRITICAL').length})
                         </p>
                         {conflicts.filter(c => c.type === 'CRITICAL').map(conflict => (
-                            <div
+                            <button
+                                type="button"
                                 key={conflict.id}
-                                className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/40 rounded-lg p-3 mb-2 cursor-pointer hover:border-red-200 dark:hover:border-red-800 transition-all"
+                                className="w-full bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/40 rounded-lg p-3 mb-2 text-left hover:border-red-200 dark:hover:border-red-800 transition-all"
                                 onClick={() => setSelectedConflict(conflict)}
                             >
                                 <div className="flex items-start justify-between mb-2">
@@ -58,7 +62,7 @@ const ConflictPanel: React.FC<ConflictPanelProps> = ({
                                         Ver detalle
                                     </span>
                                 </div>
-                            </div>
+                            </button>
                         ))}
                     </div>
                 )}
@@ -103,7 +107,7 @@ const ConflictPanel: React.FC<ConflictPanelProps> = ({
 
             {conflicts.length > 0 && (
                 <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-[#0f141a]">
-                    <button className="w-full py-2.5 bg-primary text-white text-xs font-bold rounded-lg shadow-lg shadow-primary/20 hover:bg-primary-dark transition-all flex items-center justify-center gap-2">
+                    <button type="button" onClick={onResolveAll} className="w-full py-2.5 bg-primary text-white text-xs font-bold rounded-lg shadow-lg shadow-primary/20 hover:bg-primary-dark transition-all flex items-center justify-center gap-2">
                         <span className="material-symbols-outlined text-[16px]">auto_fix</span>
                         Resolver todos automáticamente
                     </button>

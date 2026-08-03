@@ -9,5 +9,5 @@ database_id = "32f8c8bc-73cd-4be2-8830-e1a1e719345c"
 migrations_dir = "migrations"
 
 [vars]
-ENVIRONMENT = "production"
-JWT_SECRET = "scheduler-pro-secret-key-change-in-production"
+ENVIRONMENT = "demo"
+DEMO_AUTH = "true"

@@ -1,8 +1,9 @@
 import { MappingField } from "../types";
+import { session } from '../lib/session';
 
 export const analyzeMapping = async (headers: string[]): Promise<MappingField[]> => {
   const systemFields = ['Docente', 'Asignatura', 'NRC', 'Sala', 'Día', 'Horario'];
-  const token = localStorage.getItem('scheduler_token');
+  const token = session.getToken();
   const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
   try {

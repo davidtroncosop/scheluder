@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation } from '../lib/router';
 import { PeriodSelector } from './PeriodSelector';
+import { session } from '../lib/session';
 
 interface MainLayoutProps {
     children: React.ReactNode;
@@ -194,6 +195,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                     </Link>
                     <Link
                         to="/"
+                        onClick={() => session.clear()}
                         className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center' : ''} gap-3 ${sidebarCollapsed ? 'p-3' : 'px-4 py-2.5'} mt-1 text-[15px] font-medium rounded-xl transition-all group text-slate-500 dark:text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10`}
                         title={sidebarCollapsed ? 'Cerrar Sesión' : undefined}
                     >

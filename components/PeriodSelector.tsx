@@ -29,7 +29,7 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
                 className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
                 {periodsList.map(p => (
-                    <option key={p.id} value={p.name}>
+                    <option key={p.id} value={p.id}>
                         {p.name} ({p.status})
                     </option>
                 ))}

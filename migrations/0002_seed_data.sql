@@ -13,9 +13,11 @@ INSERT INTO careers (id, faculty_id, name, code) VALUES
 ('car-enf-001', 'fac-salud-001', 'Enfermería', 'ENF'),
 ('car-med-001', 'fac-salud-001', 'Medicina', 'MED');
 
--- Período activo
+-- Períodos académicos demo
 INSERT INTO periods (id, code, name, start_date, end_date, is_active) VALUES
-('per-2026-1', '2026-1', 'Primer Semestre 2026', '2026-03-01', '2026-07-15', 1);
+('per-2026-1', '2026-1', 'Primer Semestre 2026', '2026-03-01', '2026-07-15', 1),
+('per-2026-2', '2026-2', 'Segundo Semestre 2026', '2026-08-01', '2026-12-15', 0),
+('per-2025-2', '2025-2', 'Segundo Semestre 2025', '2025-08-01', '2025-12-15', 0);
 
 -- Usuario admin (password: admin123)
 INSERT INTO users (id, email, name, password_hash, role, career_id) VALUES

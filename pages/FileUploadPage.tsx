@@ -1,7 +1,8 @@
 
 import React, { useState, useCallback } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from '../lib/router';
 import * as dataStore from '../lib/dataStore';
+import { parseCsv } from '../features/imports/csv';
 
 interface ParsedRow {
   [key: string]: string;
@@ -31,9 +32,9 @@ const FileUploadPage: React.FC = () => {
   // Period selection
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
   const periods = [
-    { id: '2026-1', name: '2026 - Primer Semestre' },
-    { id: '2026-2', name: '2026 - Segundo Semestre' },
-    { id: '2025-2', name: '2025 - Segundo Semestre' },
+    { id: 'per-2026-1', name: '2026 - Primer Semestre' },
+    { id: 'per-2026-2', name: '2026 - Segundo Semestre' },
+    { id: 'per-2025-2', name: '2025 - Segundo Semestre' },
   ];
 
   const navItems = [
@@ -47,150 +48,26 @@ const FileUploadPage: React.FC = () => {
     { name: 'Salas', icon: 'meeting_room', path: '/salas' },
   ];
 
-  // Parse CSV content - handles quoted values with commas
-  const parseCSV = (content: string): { headers: string[]; rows: ParsedRow[] } => {
-    const lines = content.trim().split(/\r?\n/);
-    if (lines.length < 2) return { headers: [], rows: [] };
-
-    // Parse a CSV line respecting quoted values
-    const parseCSVLine = (line: string): string[] => {
-      const result: string[] = [];
-      let current = '';
-      let inQuotes = false;
-
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-
-        if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-          result.push(current.trim().replace(/^"|"$/g, ''));
-          current = '';
-        } else {
-          current += char;
-        }
-      }
-      // Don't forget the last field
-      result.push(current.trim().replace(/^"|"$/g, ''));
-
-      return result;
-    };
-
-    const headers = parseCSVLine(lines[0]);
-    console.log('Headers parsed:', headers);
-
-    const rows: ParsedRow[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue; // Skip empty lines
-
-      const values = parseCSVLine(line);
-      console.log(`Row ${i}:`, values);
-
-      // Be more flexible - allow rows with fewer values
-      const row: ParsedRow = {};
-      headers.forEach((h, idx) => {
-        row[h] = values[idx] || '';
-      });
-      rows.push(row);
-    }
-
-    console.log('Total rows parsed:', rows.length);
-    return { headers, rows };
-  };
-
-  // Auto-save function
-  const autoSaveData = (rows: ParsedRow[]) => {
-    if (!selectedPeriod) {
-      setUploadResult({
-        success: false,
-        message: '⚠️ Selecciona un período antes de subir el archivo',
-        inserted: 0,
-        errors: [],
-      });
+  // Parse first; persistence only happens after explicit validation and confirmation.
+  const handleFileChange = useCallback((selectedFile: File) => {
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      setUploadResult({ success: false, message: 'El archivo supera el máximo de 5 MB', inserted: 0, errors: [] });
       return;
     }
-
-    try {
-      let savedCount = 0;
-
-      switch (dataType) {
-        case 'docentes':
-          const teachers = dataStore.parseTeachersFromCSV(rows);
-          if (importMode === 'replace') {
-            dataStore.saveTeachers(teachers);
-          } else {
-            dataStore.addTeachers(teachers);
-          }
-          savedCount = teachers.length;
-          break;
-        case 'asignaturas':
-          const subjects = dataStore.parseSubjectsFromCSV(rows);
-          if (importMode === 'replace') {
-            dataStore.saveSubjects(subjects);
-          } else {
-            dataStore.addSubjects(subjects);
-          }
-          savedCount = subjects.length;
-          break;
-        case 'salas':
-          const rooms = dataStore.parseRoomsFromCSV(rows);
-          if (importMode === 'replace') {
-            dataStore.saveRooms(rooms);
-          } else {
-            dataStore.addRooms(rooms);
-          }
-          savedCount = rooms.length;
-          break;
-        case 'horarios':
-          const sections = dataStore.parseSectionsFromCSV(rows, selectedPeriod);
-          if (importMode === 'replace') {
-            const allSections = dataStore.getSections();
-            const otherPeriodSections = allSections.filter(s => s.periodo !== selectedPeriod);
-            dataStore.saveSections([...otherPeriodSections, ...sections]);
-          } else {
-            dataStore.addSections(sections, selectedPeriod);
-          }
-          savedCount = sections.length;
-          break;
-      }
-
-      dataStore.setCurrentPeriod(selectedPeriod);
-
-      const modeText = importMode === 'replace' ? 'reemplazados' : 'agregados';
-      const typeLabel = dataType === 'horarios' ? 'secciones' : dataType;
-      setUploadResult({
-        success: true,
-        message: `✅ ${savedCount} ${typeLabel} ${modeText} automáticamente`,
-        inserted: savedCount,
-        errors: [],
-      });
-    } catch (error) {
-      console.error('Error auto-saving:', error);
-      setUploadResult({
-        success: false,
-        message: 'Error al guardar automáticamente',
-        inserted: 0,
-        errors: [String(error)],
-      });
-    }
-  };
-
-  // Handle file selection - now with auto-save
-  const handleFileChange = useCallback((selectedFile: File) => {
     setFile(selectedFile);
     setUploadResult(null);
 
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
-      const { headers: parsedHeaders, rows } = parseCSV(content);
-      setHeaders(parsedHeaders);
-      setParsedData(rows);
-
-      // Auto-save immediately after parsing
-      if (rows.length > 0 && selectedPeriod) {
-        setTimeout(() => autoSaveData(rows), 100);
+      try {
+        const { headers: parsedHeaders, rows } = parseCsv(content);
+        setHeaders(parsedHeaders);
+        setParsedData(rows);
+      } catch (parseError) {
+        setParsedData([]);
+        setHeaders([]);
+        setUploadResult({ success: false, message: parseError instanceof Error ? parseError.message : 'CSV inválido', inserted: 0, errors: [] });
       }
     };
     reader.readAsText(selectedFile);
@@ -366,7 +243,13 @@ const FileUploadPage: React.FC = () => {
         if (response.ok) {
           console.log('[Upload] Remote upload successful:', remoteResult);
         } else {
-          console.warn('[Upload] Remote upload failed, falling back to local:', remoteResult.error);
+          setUploadResult({
+            success: false,
+            message: remoteResult.error || 'La API rechazó la importación',
+            inserted: remoteResult.inserted || 0,
+            errors: remoteResult.errors || [],
+          });
+          return;
         }
       } catch (e) {
         console.error('[Upload] Error during remote sync:', e);

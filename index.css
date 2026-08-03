@@ -2,6 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-tight text-slate-900 dark:text-slate-50;
+  }
+
+  body {
+    @apply font-body text-slate-600 dark:text-slate-300;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-white dark:ring-offset-slate-950;
+  }
+}
+
+@layer components {
+  .glass-effect {
+    @apply border border-white/40 bg-white/70 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/60;
+  }
+
+  .glass-panel {
+    @apply border border-slate-200/50 bg-white/80 shadow-premium backdrop-blur-md dark:border-slate-800/50 dark:bg-slate-900/80;
+  }
+
+  .input-glass {
+    @apply border-slate-200 bg-slate-50/50 backdrop-blur-sm transition-all focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/50 dark:border-slate-800 dark:bg-slate-950/30;
+  }
+}
+
 @layer utilities {
   .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-dark via-primary to-primary-light;
@@ -13,6 +41,14 @@ body {
   @apply antialiased text-slate-800 dark:text-slate-200 transition-colors duration-300;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+}
+
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { @apply rounded-full bg-slate-300 hover:bg-slate-400 dark:bg-slate-700 dark:hover:bg-slate-600; }
 
 /* Premium Animations */
 @keyframes slideInUp {
@@ -117,4 +153,13 @@ body {
 /* Subtle selection */
 ::selection {
   @apply bg-primary/20 text-primary-dark dark:text-primary-light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

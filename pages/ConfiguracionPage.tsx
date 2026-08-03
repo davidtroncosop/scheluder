@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/MainLayout';
 import * as dataStore from '../lib/dataStore';
+import api from '../services/api';
+import { session } from '../lib/session';
 
 const ConfiguracionPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'general' | 'timeslots' | 'periods' | 'users'>('general');
-    const [selectedPeriod, setSelectedPeriod] = useState('2026-1');
+    const [selectedPeriod, setSelectedPeriod] = useState('per-2026-1');
 
     // General Settings State
     const [settings, setSettings] = useState({
@@ -56,6 +58,10 @@ const ConfiguracionPage: React.FC = () => {
         if (savedSettings) {
             try { setSettings(JSON.parse(savedSettings)); } catch (e) { console.error(e); }
         }
+        const careerId = session.getUser()?.career_id || 'car-kine-001';
+        api.getSettings(careerId).then(remote => {
+            if (Object.keys(remote).length > 0) setSettings(current => ({ ...current, ...remote }));
+        }).catch(() => { /* offline demo uses local settings */ });
 
         // Timeslots
         setTimeslots(dataStore.getCustomTimeslots());
@@ -79,11 +85,13 @@ const ConfiguracionPage: React.FC = () => {
     }, []);
 
     // Save All configuration
-    const handleSaveAll = () => {
+    const handleSaveAll = async () => {
         localStorage.setItem('scheduler_general_settings', JSON.stringify(settings));
         dataStore.saveCustomTimeslots(timeslots);
         dataStore.saveCustomPeriods(periods);
         localStorage.setItem('scheduler_users', JSON.stringify(users));
+        const careerId = session.getUser()?.career_id || 'car-kine-001';
+        try { await api.saveSettings({ ...settings, career_id: careerId }); } catch { /* offline demo */ }
         alert('✅ Configuración del sistema guardada exitosamente.');
     };
 
@@ -472,7 +480,7 @@ const ConfiguracionPage: React.FC = () => {
                                         <div className="flex justify-between items-start mb-4">
                                             <h4 className="text-base font-bold text-slate-900 dark:text-white">{period.name}</h4>
                                             <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${period.status === 'Activo' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' :
-                                                    period.status === 'Archivado' ? 'bg-slate-100 text-slate-450 dark:bg-slate-800 dark:text-slate-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
+                                                    period.status === 'Archivado' ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
                                                 }`}>
                                                 {period.status}
                                             </span>
@@ -516,7 +524,7 @@ const ConfiguracionPage: React.FC = () => {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-6">
-                                            <span className={`text-[10px] font-black uppercase tracking-widest ${user.role === 'Administrador' ? 'text-primary' : 'text-slate-450'}`}>
+                                            <span className={`text-[10px] font-black uppercase tracking-widest ${user.role === 'Administrador' ? 'text-primary' : 'text-slate-500'}`}>
                                                 {user.role}
                                             </span>
                                             <div className="flex gap-1">
