@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as dataStore from '../lib/dataStore';
+import api from '../services/api';
 
 interface PeriodSelectorProps {
     selectedPeriod: string;
@@ -15,9 +16,17 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
     const [periodsList, setPeriodsList] = useState<dataStore.LocalPeriod[]>([]);
 
     useEffect(() => {
-        // Load dynamically from database/local storage
-        const loaded = dataStore.getCustomPeriods();
-        setPeriodsList(loaded);
+        // The API provisions the current planning period automatically and
+        // returns it first as the active/default option.
+        api.getPeriods()
+            .then(remote => setPeriodsList(remote.map(period => ({
+                id: period.id,
+                name: period.name,
+                status: period.is_active ? 'Activo' : 'Borrador',
+                startDate: period.start_date,
+                endDate: period.end_date,
+            }))))
+            .catch(() => setPeriodsList(dataStore.getCustomPeriods()));
     }, [selectedPeriod]); // reload when period changes to sync changes made elsewhere
 
     return (

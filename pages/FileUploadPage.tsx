@@ -1,8 +1,12 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from '../lib/router';
 import * as dataStore from '../lib/dataStore';
+import { OFFLINE_DEMO_ENABLED } from '../lib/runtime';
 import { parseCsv } from '../features/imports/csv';
+import { useAcademicPeriods } from '../lib/academicPeriods';
+import api from '../services/api';
+import { session } from '../lib/session';
 
 interface ParsedRow {
   [key: string]: string;
@@ -30,12 +34,17 @@ const FileUploadPage: React.FC = () => {
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace'); // Reemplazar por defecto
 
   // Period selection
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('');
-  const periods = [
-    { id: 'per-2026-1', name: '2026 - Primer Semestre' },
-    { id: 'per-2026-2', name: '2026 - Segundo Semestre' },
-    { id: 'per-2025-2', name: '2025 - Segundo Semestre' },
-  ];
+  const { periods, selectedPeriod, setSelectedPeriod } = useAcademicPeriods();
+  const [careers, setCareers] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [selectedCareer, setSelectedCareer] = useState(session.getUser()?.career_id || '');
+  const isAdmin = session.getUser()?.role === 'admin';
+
+  useEffect(() => {
+    api.getCareers().then(remote => {
+      setCareers(remote.map(career => ({ id: career.id, name: career.name, code: career.code })));
+      if (!selectedCareer && remote[0]) setSelectedCareer(remote[0].id);
+    }).catch(() => undefined);
+  }, [selectedCareer]);
 
   const navItems = [
     { name: 'Planificador', icon: 'grid_view', path: '/scheduler' },
@@ -215,6 +224,11 @@ const FileUploadPage: React.FC = () => {
   const handleUpload = async () => {
     if (!parsedData.length) return;
 
+    if (!selectedPeriod || !selectedCareer) {
+      setUploadResult({ success: false, message: 'Selecciona una carrera y un período antes de importar.', inserted: 0, errors: [] });
+      return;
+    }
+
     // Validate first
     if (!validateData()) {
       return; // Don't upload if there are validation errors
@@ -235,6 +249,7 @@ const FileUploadPage: React.FC = () => {
           body: JSON.stringify({
             data: parsedData,
             period_id: selectedPeriod,
+            career_id: selectedCareer,
             import_mode: importMode
           })
         });
@@ -253,7 +268,21 @@ const FileUploadPage: React.FC = () => {
         }
       } catch (e) {
         console.error('[Upload] Error during remote sync:', e);
+        if (!OFFLINE_DEMO_ENABLED) {
+          setUploadResult({
+            success: false,
+            message: 'No fue posible conectar con el servidor. No se importó ningún registro.',
+            inserted: 0,
+            errors: [e instanceof Error ? e.message : String(e)],
+          });
+          return;
+        }
       }
+    }
+
+    if (!token && !OFFLINE_DEMO_ENABLED) {
+      setUploadResult({ success: false, message: 'La sesión no es válida. Vuelve a iniciar sesión.', inserted: 0, errors: [] });
+      return;
     }
 
     // 2. Demo mode/Fallback: Save directly to localStorage
@@ -308,7 +337,9 @@ const FileUploadPage: React.FC = () => {
       const modeText = importMode === 'replace' ? 'reemplazados' : 'agregados';
       setUploadResult({
         success: true,
-        message: `✅ ${savedCount} registros ${modeText} y sincronizados`,
+        message: token
+          ? `✅ ${savedCount} registros ${modeText} y sincronizados`
+          : `✅ ${savedCount} registros ${modeText} en modo demo local`,
         inserted: savedCount,
         errors: [],
       });
@@ -433,8 +464,30 @@ const FileUploadPage: React.FC = () => {
               )}
             </div>
 
+            <div className="mb-6">
+              <label htmlFor="import-career" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                <span className="text-red-500">*</span> Carrera:
+              </label>
+              {isAdmin ? (
+                <select
+                  id="import-career"
+                  value={selectedCareer}
+                  onChange={event => setSelectedCareer(event.target.value)}
+                  className="w-full max-w-xl rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  <option value="">Selecciona una carrera</option>
+                  {careers.map(career => <option key={career.id} value={career.id}>{career.code} · {career.name}</option>)}
+                </select>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 text-sm font-bold text-primary">
+                  <span className="material-symbols-outlined text-base" aria-hidden="true">school</span>
+                  {careers.find(career => career.id === selectedCareer)?.name || 'Carrera asignada a tu cuenta'}
+                </div>
+              )}
+            </div>
+
             {/* Data Type Selector */}
-            <div className={`mb-6 transition-opacity ${selectedPeriod ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+            <div className={`mb-6 transition-opacity ${selectedPeriod && selectedCareer ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
                 Tipo de datos a importar:
               </label>
@@ -464,7 +517,7 @@ const FileUploadPage: React.FC = () => {
             </div>
 
             {/* Import Mode Selector */}
-            <div className={`mb-6 transition-opacity ${selectedPeriod ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+            <div className={`mb-6 transition-opacity ${selectedPeriod && selectedCareer ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
                 Modo de importación:
               </label>
@@ -499,7 +552,7 @@ const FileUploadPage: React.FC = () => {
             </div>
 
             {/* CSV Structure Info */}
-            <div className={`mb-6 transition-opacity ${selectedPeriod ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+            <div className={`mb-6 transition-opacity ${selectedPeriod && selectedCareer ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
                 <div className="flex items-start gap-3">
                   <span className="material-symbols-outlined text-blue-500 text-xl">info</span>
@@ -604,11 +657,11 @@ SIMULADOR 1,SIM,15,Edificio D,"DKIN0051,DKIN0052"`
 
             {/* Upload Area */}
             <div
-              onDragEnter={selectedPeriod ? handleDrag : undefined}
-              onDragLeave={selectedPeriod ? handleDrag : undefined}
-              onDragOver={selectedPeriod ? handleDrag : undefined}
-              onDrop={selectedPeriod ? handleDrop : undefined}
-              className={`relative border-2 border-dashed rounded-xl p-12 text-center transition-all ${!selectedPeriod
+              onDragEnter={selectedPeriod && selectedCareer ? handleDrag : undefined}
+              onDragLeave={selectedPeriod && selectedCareer ? handleDrag : undefined}
+              onDragOver={selectedPeriod && selectedCareer ? handleDrag : undefined}
+              onDrop={selectedPeriod && selectedCareer ? handleDrop : undefined}
+              className={`relative border-2 border-dashed rounded-xl p-12 text-center transition-all ${!selectedPeriod || !selectedCareer
                 ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900'
                 : dragActive
                   ? 'border-primary bg-primary/5'
@@ -618,9 +671,9 @@ SIMULADOR 1,SIM,15,Edificio D,"DKIN0051,DKIN0052"`
               <input
                 type="file"
                 accept=".csv"
-                disabled={!selectedPeriod}
+                disabled={!selectedPeriod || !selectedCareer}
                 onChange={(e) => e.target.files?.[0] && handleFileChange(e.target.files[0])}
-                className={`absolute inset-0 w-full h-full opacity-0 ${selectedPeriod ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                className={`absolute inset-0 w-full h-full opacity-0 ${selectedPeriod && selectedCareer ? 'cursor-pointer' : 'cursor-not-allowed'}`}
               />
               <div className="flex flex-col items-center gap-4">
                 <div className={`size-16 rounded-full flex items-center justify-center transition-colors ${file ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-slate-100 dark:bg-slate-800'

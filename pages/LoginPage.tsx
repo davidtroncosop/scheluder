@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { useLocation, useNavigate } from '../lib/router';
+import { Link, useLocation, useNavigate } from '../lib/router';
 import { createOfflineDemoSession, session, type SessionUser } from '../lib/session';
+import api from '../services/api';
 
 interface LoginPageProps {
   onToggleDarkMode: () => void;
@@ -12,17 +13,19 @@ const DEMO_USERS = [
   { email: 'admin@scheduler.pro', label: 'Administrador', description: 'Vista global de la institución', icon: 'admin_panel_settings' },
 ] as const;
 
+const DEMO_MODE = import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === 'true';
+
 const LoginPage: React.FC<LoginPageProps> = ({ onToggleDarkMode, isDarkMode }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [email, setEmail] = useState<string>(DEMO_USERS[0].email);
-  const [password, setPassword] = useState('demo');
+  const [email, setEmail] = useState<string>(DEMO_MODE ? DEMO_USERS[0].email : '');
+  const [password, setPassword] = useState(DEMO_MODE ? 'demo' : '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const enter = (token: string, user: SessionUser) => {
     session.save(token, user);
-    const destination = (location.state as { from?: string } | null)?.from || '/scheduler';
+    const destination = (location.state as { from?: string } | null)?.from || (user.role === 'admin' ? '/admin' : '/scheduler');
     navigate(destination, { replace: true });
   };
 
@@ -32,20 +35,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onToggleDarkMode, isDarkMode }) =
     setError(null);
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await response.json() as { token?: string; user?: SessionUser; error?: string };
-
-      if (!response.ok || !data.token || !data.user) {
-        throw new Error(data.error || 'No fue posible iniciar la sesión demo');
-      }
-      enter(data.token, data.user);
+      const data = await api.login(email, password);
+      enter(data.token, data.user as SessionUser);
     } catch (requestError) {
-      // The demo remains usable while the local Worker is not running.
-      if (DEMO_USERS.some(user => user.email === email)) {
+      if (DEMO_MODE && DEMO_USERS.some(user => user.email === email)) {
         const offline = createOfflineDemoSession(email);
         enter(offline.token, offline.user);
         return;
@@ -78,21 +71,21 @@ const LoginPage: React.FC<LoginPageProps> = ({ onToggleDarkMode, isDarkMode }) =
               </div>
               <span className="font-display text-xl font-bold">Scheduler Pro</span>
             </div>
-            <p className="mb-3 text-xs font-bold uppercase tracking-[0.22em] text-indigo-300">Entorno demostrativo</p>
+            <p className="mb-3 text-xs font-bold uppercase tracking-[0.22em] text-indigo-300">Planificación académica</p>
             <h1 className="max-w-md text-3xl font-bold leading-tight text-white sm:text-4xl">Decisiones académicas claras, antes de que aparezcan los conflictos.</h1>
-            <p className="mt-5 max-w-md text-sm leading-6 text-slate-300">Explora el planificador con datos de ejemplo. La autenticación es deliberadamente demo: cualquier contraseña funciona para los perfiles habilitados.</p>
+            <p className="mt-5 max-w-md text-sm leading-6 text-slate-300">Gestiona horarios, disponibilidad docente, salas y conflictos desde un único espacio de trabajo.</p>
           </div>
           <div className="mt-10 flex items-center gap-2 text-xs text-slate-400">
-            <span className="material-symbols-outlined text-base" aria-hidden="true">lock_open</span>
-            No utilices credenciales reales en este entorno.
+            <span className="material-symbols-outlined text-base" aria-hidden="true">verified_user</span>
+            Acceso protegido y trazable por usuario.
           </div>
         </div>
 
         <div className="bg-white/90 p-8 dark:bg-slate-900/90 sm:p-10">
-          <h2 className="text-2xl font-bold">Entrar a la demo</h2>
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Elige un perfil o escribe una cuenta demo.</p>
+          <h2 className="text-2xl font-bold">Iniciar sesión</h2>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Ingresa con tu cuenta institucional.</p>
 
-          <div className="mt-6 grid gap-3">
+          {DEMO_MODE && <div className="mt-6 grid gap-3">
             {DEMO_USERS.map(user => (
               <button
                 key={user.email}
@@ -109,12 +102,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onToggleDarkMode, isDarkMode }) =
                 {email === user.email && <span className="material-symbols-outlined ml-auto text-primary" aria-hidden="true">check_circle</span>}
               </button>
             ))}
-          </div>
+          </div>}
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">{error}</div>}
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
-              Correo demo
+              Correo
               <input className="input-glass mt-1.5 h-11 w-full rounded-xl px-3 text-slate-900 dark:text-white" type="email" value={email} onChange={event => setEmail(event.target.value)} required autoComplete="username" />
             </label>
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -124,6 +117,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onToggleDarkMode, isDarkMode }) =
             <button type="submit" disabled={loading} className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100">
               {loading ? <span className="size-5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-label="Ingresando" /> : <><span>Ingresar</span><span className="material-symbols-outlined text-lg" aria-hidden="true">arrow_forward</span></>}
             </button>
+            {!DEMO_MODE && <p className="text-center text-sm text-slate-500 dark:text-slate-400">¿Aún no tienes acceso? <Link to="/register" className="font-bold text-primary hover:underline">Crear cuenta</Link></p>}
           </form>
         </div>
       </section>

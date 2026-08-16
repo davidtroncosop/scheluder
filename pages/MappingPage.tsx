@@ -2,25 +2,51 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from '../lib/router';
 import SharedHeader from '../components/SharedHeader';
-import { analyzeMapping } from '../services/geminiService';
+import { analyzeMapping } from '../services/aiService';
+import {
+  getMappingAIModel,
+  MAPPING_AI_MODELS,
+  type MappingAIModelId,
+  type MappingAnalysis,
+} from '../features/ai/mapping';
 import { MappingField } from '../types';
+
+const MOCK_HEADERS = ['PROFESOR_NOMBRE', 'COD_ASIGNATURA', 'N_NRC', 'SALA_COD', 'DIA_SEMANA', 'BLOQUE_HORARIO'];
 
 const MappingPage: React.FC = () => {
   const navigate = useNavigate();
   const [mappings, setMappings] = useState<MappingField[]>([]);
   const [loading, setLoading] = useState(true);
+  const [analysis, setAnalysis] = useState<MappingAnalysis | null>(null);
+  const [selectedModel, setSelectedModel] = useState<MappingAIModelId>(() => {
+    const saved = localStorage.getItem('scheduler_mapping_ai_model');
+    return MAPPING_AI_MODELS.some(option => option.id === saved) ? saved as MappingAIModelId : 'auto';
+  });
+
+  const runAnalysis = async (model: MappingAIModelId) => {
+    setLoading(true);
+    const result = await analyzeMapping(MOCK_HEADERS, model);
+    setMappings(result.mappings);
+    setAnalysis(result);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchAnalysis = async () => {
-      // Simulated headers from a CSV
-      const mockHeaders = ['PROFESOR_NOMBRE', 'COD_ASIGNATURA', 'N_NRC', 'SALA_COD', 'DIA_SEMANA', 'BLOQUE_HORARIO'];
-      const result = await analyzeMapping(mockHeaders);
-      setMappings(result);
-      setLoading(false);
-    };
-
-    fetchAnalysis();
+    void runAnalysis(selectedModel);
+    // Run only on initial mount. Later analyses are explicit to avoid accidental API usage.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleModelChange = (model: MappingAIModelId) => {
+    setSelectedModel(model);
+    localStorage.setItem('scheduler_mapping_ai_model', model);
+  };
+
+  const activeModel = getMappingAIModel(selectedModel);
+  const validCount = mappings.filter(mapping => mapping.status === 'valid').length;
+  const warningCount = mappings.filter(mapping => mapping.status === 'warning').length;
+  const errorCount = mappings.filter(mapping => mapping.status === 'error').length;
+  const usedModelLabel = analysis?.model || (analysis?.provider === 'local' ? 'Reglas locales' : activeModel.shortLabel);
 
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen flex flex-col font-display">
@@ -52,17 +78,58 @@ const MappingPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <h3 className="text-[#111418] dark:text-white text-xl font-bold">Configuración</h3>
-                    <span className="bg-primary/10 text-primary text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${analysis?.fallback ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' : 'bg-primary/10 text-primary'}`}>
                       <span className="material-symbols-outlined text-sm">auto_awesome</span>
-                      IA Activa
+                      {analysis?.fallback ? 'Modo respaldo' : 'IA activa'}
                     </span>
                   </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 dark:border-border-dark bg-white dark:bg-surface-dark p-4 shadow-sm">
+                  <div className="flex flex-col md:flex-row md:items-end gap-4">
+                    <div className="flex-1 space-y-2">
+                      <label htmlFor="mapping-ai-model" className="text-[11px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                        Modelo para analizar columnas
+                      </label>
+                      <div className="relative">
+                        <select
+                          id="mapping-ai-model"
+                          value={selectedModel}
+                          onChange={event => handleModelChange(event.target.value as MappingAIModelId)}
+                          disabled={loading}
+                          className="w-full h-11 rounded-lg border-slate-300 dark:border-border-dark bg-slate-50 dark:bg-black/20 text-slate-900 dark:text-white text-sm font-semibold pr-10 focus:border-primary focus:ring-primary disabled:opacity-60"
+                        >
+                          {MAPPING_AI_MODELS.map(option => (
+                            <option key={option.id} value={option.id}>{option.label}</option>
+                          ))}
+                        </select>
+                        <span className="material-symbols-outlined pointer-events-none absolute right-3 top-2.5 text-slate-400">expand_more</span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{activeModel.description}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void runAnalysis(selectedModel)}
+                      disabled={loading}
+                      className="h-11 inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-bold text-white shadow-md shadow-primary/20 transition-colors hover:bg-blue-600 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      <span className={`material-symbols-outlined text-lg ${loading ? 'animate-spin' : ''}`}>{loading ? 'progress_activity' : 'refresh'}</span>
+                      {loading ? 'Analizando' : 'Analizar nuevamente'}
+                    </button>
+                  </div>
+                  {analysis && (
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 dark:border-border-dark pt-3 text-xs">
+                      <span className="text-slate-500 dark:text-slate-400">Resultado generado con</span>
+                      <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 font-bold text-slate-700 dark:text-slate-200">{usedModelLabel}</span>
+                      {analysis.notice && <span className="w-full text-orange-700 dark:text-orange-300">{analysis.notice}</span>}
+                    </div>
+                  )}
                 </div>
 
                 {loading ? (
                   <div className="flex flex-col items-center justify-center py-20 gap-4">
                     <div className="size-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-slate-500 font-medium">Gemini analizando estructura del archivo...</p>
+                    <p className="text-slate-500 font-medium">{activeModel.shortLabel} está analizando la estructura...</p>
                   </div>
                 ) : (
                   mappings.map((mapping, idx) => (
@@ -120,15 +187,21 @@ const MappingPage: React.FC = () => {
                     <div className="space-y-4">
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-slate-500">Mapeos válidos</span>
-                        <span className="font-bold text-green-600">4</span>
+                        <span className="font-bold text-green-600">{validCount}</span>
                       </div>
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-slate-500">Advertencias</span>
-                        <span className="font-bold text-orange-500">2</span>
+                        <span className="font-bold text-orange-500">{warningCount}</span>
                       </div>
+                      {errorCount > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-500">Errores</span>
+                          <span className="font-bold text-red-500">{errorCount}</span>
+                        </div>
+                      )}
                       <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                         <p className="text-xs text-blue-800 dark:text-blue-300">
-                          La IA ha sugerido el 80% de los campos basándose en el historial de importación.
+                          Revisa siempre las sugerencias antes de importar. El proveedor nunca guarda cambios directamente.
                         </p>
                       </div>
                     </div>

@@ -1,0 +1,10 @@
+# Copia este archivo como .dev.vars y reemplaza solo las claves que quieras probar.
+# Nunca subas .dev.vars al repositorio.
+ENVIRONMENT=development
+DEMO_AUTH=true
+GEMINI_API_KEY=PLACEHOLDER_API_KEY
+OPENAI_API_KEY=PLACEHOLDER_API_KEY
+
+# Genera valores largos y aleatorios; no reutilices los de producción.
+JWT_SECRET=REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS
+BOOTSTRAP_TOKEN=REPLACE_WITH_A_DIFFERENT_RANDOM_TOKEN

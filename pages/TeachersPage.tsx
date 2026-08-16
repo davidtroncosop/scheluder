@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/MainLayout';
 import * as dataStore from '../lib/dataStore';
+import { OFFLINE_DEMO_ENABLED } from '../lib/runtime';
 import api from '../services/api';
+import { useAcademicPeriods } from '../lib/academicPeriods';
 
 interface Teacher {
   id: string;
@@ -32,7 +34,7 @@ const TeachersPage: React.FC = () => {
   const [availability, setAvailability] = useState<Availability[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState('per-2026-1');
+  const { selectedPeriod, setSelectedPeriod } = useAcademicPeriods();
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -61,8 +63,12 @@ const TeachersPage: React.FC = () => {
         setLoading(false);
         return;
       }
-    } catch {
-      // The explicit demo fallback below keeps the UI usable without a Worker.
+    } catch (error) {
+      if (!OFFLINE_DEMO_ENABLED) {
+        setLoading(false);
+        alert(error instanceof Error ? error.message : 'No fue posible cargar los docentes');
+        return;
+      }
     }
     const localTeachers = dataStore.getTeachers();
     if (localTeachers.length > 0) {
@@ -232,8 +238,11 @@ const TeachersPage: React.FC = () => {
       
       try {
         await api.updateTeacherAvailability(selectedTeacherId, availability.map(({ day_of_week, timeslot_id, status }) => ({ day_of_week, timeslot_id, status })));
-      } catch {
-        // Offline demo: persist the same state locally.
+      } catch (error) {
+        if (!OFFLINE_DEMO_ENABLED) {
+          alert(error instanceof Error ? error.message : 'No fue posible guardar la disponibilidad');
+          return;
+        }
       }
       dataStore.addOrUpdateTeacher(updatedTeacherData);
       
@@ -287,8 +296,11 @@ const TeachersPage: React.FC = () => {
         id, name: formData.name, email: formData.email, contract_type: formData.contract_type,
         max_hours_per_week: Number(formData.max_hours_per_week), is_active: formData.is_active,
       }, Boolean(editingTeacher));
-    } catch {
-      // Offline demo fallback.
+    } catch (error) {
+      if (!OFFLINE_DEMO_ENABLED) {
+        alert(error instanceof Error ? error.message : 'No fue posible guardar el docente');
+        return;
+      }
     }
     dataStore.addOrUpdateTeacher(newTeacher);
     await loadTeachersList();
@@ -302,7 +314,12 @@ const TeachersPage: React.FC = () => {
   // Delete Teacher
   const handleDeleteTeacher = async (id: string, name: string) => {
     if (window.confirm(`¿Está seguro de que desea eliminar al docente "${name}"?`)) {
-      try { await api.deleteTeacher(id); } catch { /* offline demo */ }
+      try { await api.deleteTeacher(id); } catch (error) {
+        if (!OFFLINE_DEMO_ENABLED) {
+          alert(error instanceof Error ? error.message : 'No fue posible eliminar el docente');
+          return;
+        }
+      }
       dataStore.deleteTeacher(id);
       
       // Update list

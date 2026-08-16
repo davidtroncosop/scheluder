@@ -1,5 +1,5 @@
 -- =============================================
--- SCHEDULER PRO - Seed Data
+-- SCHEDULER PRO - Local demo data only
 -- =============================================
 
 -- Facultades
@@ -19,10 +19,11 @@ INSERT INTO periods (id, code, name, start_date, end_date, is_active) VALUES
 ('per-2026-2', '2026-2', 'Segundo Semestre 2026', '2026-08-01', '2026-12-15', 0),
 ('per-2025-2', '2025-2', 'Segundo Semestre 2025', '2025-08-01', '2025-12-15', 0);
 
--- Usuario admin (password: admin123)
+-- Usuarios exclusivamente locales. La clave de prueba es DemoLocal2026! y los
+-- hashes usan el mismo formato PBKDF2 que producción.
 INSERT INTO users (id, email, name, password_hash, role, career_id) VALUES
-('usr-admin-001', 'admin@scheduler.pro', 'Administrador', 'ec83c02ae90515b13dac7c238046dcb1d5f70dca5a6d6238c206f6de0e2df4a1', 'admin', NULL),
-('usr-coord-kine', 'coordinador@kine.edu', 'Coordinador Kinesiología', 'ec83c02ae90515b13dac7c238046dcb1d5f70dca5a6d6238c206f6de0e2df4a1', 'coordinator', 'car-kine-001');
+('usr-9d962496-8a26-47bb-8da7-a3868ba784a6', 'admin@scheduler.pro', 'Administrador', 'pbkdf2-sha256$100000$x4RElwZ6WZtzsf3o2MYxNg$pKUtP3BvoMXpTew-bda2MMdyR0eWQZ_eUeVqWh89jnU', 'admin', NULL),
+('usr-23939da0-e3f3-49f5-b21b-09647ef63bbb', 'coordinador@kine.edu', 'Coordinador Kinesiología', 'pbkdf2-sha256$100000$KAZoUEqQc9obiR1i4WGyKQ$cwiYBEkT94t0r1PAgHVBLXu4Mqg0NEbY6h8FGmO6Y4I', 'coordinator', 'car-kine-001');
 
 -- Timeslots (Módulos)
 INSERT INTO timeslots (id, label, start_time, end_time, order_index) VALUES
@@ -59,13 +60,13 @@ INSERT INTO subjects (id, career_id, code, name, level, credits) VALUES
 ('sub-anat-001', 'car-kine-001', 'DANA0020', 'Anatomía II', 2, 6);
 
 -- Secciones (NRCs)
-INSERT INTO sections (id, subject_id, nrc, section_code, type, expected_students, hours_per_week, teacher_id, priority) VALUES
-('sec-morf-lab', 'sub-morf-001', '23456', 'S1', 'LAB', 25, 4, 'tch-reyes-001', 2),
-('sec-biom-teo', 'sub-biom-001', '23489', 'S1', 'TEO', 40, 2, 'tch-soto-001', 1),
-('sec-fisio-teo', 'sub-fisio-001', '23490', 'S1', 'TEO', 40, 4, 'tch-soto-001', 0),
-('sec-bioe-teo', 'sub-bioe-001', '23491', 'S1', 'TEO', 40, 2, 'tch-reyes-001', 0),
-('sec-salp-teo', 'sub-salp-001', '23492', 'S1', 'TEO', 40, 2, 'tch-valenz-001', 0),
-('sec-anat-teo', 'sub-anat-001', '11202', 'S1', 'TEO', 40, 4, 'tch-rivas-001', 0);
+INSERT INTO sections (id, period_id, career_id, subject_id, nrc, section_code, type, expected_students, hours_per_week, teacher_id, priority) VALUES
+('sec-morf-lab', 'per-2026-1', 'car-kine-001', 'sub-morf-001', '23456', 'S1', 'LAB', 25, 4, 'tch-reyes-001', 2),
+('sec-biom-teo', 'per-2026-1', 'car-kine-001', 'sub-biom-001', '23489', 'S1', 'TEO', 40, 2, 'tch-soto-001', 1),
+('sec-fisio-teo', 'per-2026-1', 'car-kine-001', 'sub-fisio-001', '23490', 'S1', 'TEO', 40, 4, 'tch-soto-001', 0),
+('sec-bioe-teo', 'per-2026-1', 'car-kine-001', 'sub-bioe-001', '23491', 'S1', 'TEO', 40, 2, 'tch-reyes-001', 0),
+('sec-salp-teo', 'per-2026-1', 'car-kine-001', 'sub-salp-001', '23492', 'S1', 'TEO', 40, 2, 'tch-valenz-001', 0),
+('sec-anat-teo', 'per-2026-1', 'car-kine-001', 'sub-anat-001', '11202', 'S1', 'TEO', 40, 4, 'tch-rivas-001', 0);
 
 -- Disponibilidad de docentes (bloqueados algunos horarios)
 INSERT INTO teacher_availability (teacher_id, day_of_week, timeslot_id, status) VALUES
@@ -94,7 +95,7 @@ INSERT INTO rules (id, code, name, description, type, is_active, score_impact) V
 -- Algunas asignaciones de ejemplo
 INSERT INTO schedule_assignments (id, career_id, period_id, section_id, room_id, timeslot_id, day_of_week, is_published) VALUES
 ('asg-001', 'car-kine-001', 'per-2026-1', 'sec-salp-teo', 'room-204', 'ts-m1', 1, 1),
-('asg-002', 'car-kine-001', 'per-2026-1', 'sec-fisio-teo', 'room-204', 'ts-m2', 1, 1),
+('asg-002', 'car-kine-001', 'per-2026-1', 'sec-morf-lab', 'room-lab1', 'ts-m2', 2, 1),
 ('asg-003', 'car-kine-001', 'per-2026-1', 'sec-bioe-teo', 'room-204', 'ts-m2', 2, 1),
 ('asg-004', 'car-kine-001', 'per-2026-1', 'sec-anat-teo', 'room-204', 'ts-m1', 4, 1);
 

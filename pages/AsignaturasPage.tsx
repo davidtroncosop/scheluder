@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/MainLayout';
 import * as dataStore from '../lib/dataStore';
+import { OFFLINE_DEMO_ENABLED } from '../lib/runtime';
 import api from '../services/api';
+import { useAcademicPeriods } from '../lib/academicPeriods';
 
 interface Subject {
     id: string;
@@ -18,7 +20,7 @@ const AsignaturasPage: React.FC = () => {
     const [subjects, setSubjects] = useState<Subject[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
-    const [selectedPeriod, setSelectedPeriod] = useState('per-2026-1');
+    const { selectedPeriod, setSelectedPeriod } = useAcademicPeriods();
 
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -42,7 +44,13 @@ const AsignaturasPage: React.FC = () => {
                 setLoading(false);
                 return;
             }
-        } catch { /* offline demo fallback */ }
+        } catch (error) {
+            if (!OFFLINE_DEMO_ENABLED) {
+                setLoading(false);
+                alert(error instanceof Error ? error.message : 'No fue posible cargar las asignaturas');
+                return;
+            }
+        }
         const localSubjects = dataStore.getSubjects();
         if (localSubjects.length > 0) {
             const converted: Subject[] = localSubjects.map(s => ({
@@ -125,7 +133,12 @@ const AsignaturasPage: React.FC = () => {
 
         try {
             await api.saveSubject({ id, code: newSubjectData.codigo, name: newSubjectData.nombre, level: newSubjectData.nivel, credits: newSubjectData.creditos, career_id: newSubjectData.carrera }, Boolean(editingSubject));
-        } catch { /* offline demo fallback */ }
+        } catch (error) {
+            if (!OFFLINE_DEMO_ENABLED) {
+                alert(error instanceof Error ? error.message : 'No fue posible guardar la asignatura');
+                return;
+            }
+        }
         dataStore.addOrUpdateSubject(newSubjectData);
         await loadSubjectsList();
         setIsModalOpen(false);
@@ -136,6 +149,10 @@ const AsignaturasPage: React.FC = () => {
             try { await api.deleteSubject(id); } catch (error) {
                 if (error instanceof Error && error.message.includes('secciones asociadas')) {
                     alert(error.message);
+                    return;
+                }
+                if (!OFFLINE_DEMO_ENABLED) {
+                    alert(error instanceof Error ? error.message : 'No fue posible eliminar la asignatura');
                     return;
                 }
             }

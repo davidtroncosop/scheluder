@@ -1,174 +1,135 @@
-# 🗓️ Scheduler Pro
+# Scheduler Pro
 
-**Plataforma de gestión táctica para planificación académica inteligente**
+Aplicación web para administrar docentes, asignaturas, salas y planificación académica. El frontend usa React y Vite; la API usa Hono sobre Cloudflare Pages Functions y persiste en Cloudflare D1.
 
-Sistema que transforma el caos de la planificación de horarios en un proceso de toma de decisiones inteligente usando un motor de reglas en tiempo real.
+## Requisitos
 
-## 🚀 Stack Tecnológico
+- Node.js 22.12 o posterior (`nvm use` lee `.nvmrc`).
+- npm.
+- Una cuenta de Cloudflare para desplegar.
 
-- **Frontend**: React 19 + TypeScript + Vite
-- **Backend**: Cloudflare Workers + Hono
-- **Base de Datos**: Cloudflare D1 (SQLite)
-- **Despliegue**: Cloudflare Pages
-
-## 📋 Requisitos
-
-- Node.js 18+
-- npm o pnpm
-- Cuenta de Cloudflare (gratuita)
-
-## 🛠️ Instalación Local
+## Desarrollo local
 
 ```bash
-# 1. Instalar dependencias reproducibles
 npm ci
-
-# 2. Crear base de datos D1 local
-npm run db:migrate
-npm run db:seed
-
-# 3. Ejecutar en modo desarrollo (2 terminales)
-
-# Terminal 1: Vite (Frontend)
-npm run dev
-
-# Terminal 2: Wrangler Pages (Backend + D1; compila antes de iniciar)
+cp .dev.vars.example .dev.vars
+cp .env.example .env.local
+npm run db:setup
 npm run pages:dev
 ```
 
-La aplicación estará disponible en:
-- **Frontend**: http://localhost:3000
-- **API**: http://localhost:8788/api
+`db:setup` aplica las migraciones y carga datos exclusivamente de demostración desde `seed/demo_data.sql`. Las cuentas locales son `admin@scheduler.pro` y `coordinador@kine.edu`, con contraseña `DemoLocal2026!`. No ejecutes `npm run db:seed` sobre producción.
 
-## 🌐 Despliegue en Cloudflare
+El modo demo solo puede activarse en un build de desarrollo. En producción, `DEMO_AUTH=false` y las contraseñas se verifican mediante PBKDF2.
 
-### 1. Crear la base de datos D1 en producción
+## Planificación asistida
 
-```bash
-npx wrangler d1 create scheduler-pro-db
-```
+La ruta `/#/assistant` ofrece el flujo recomendado para coordinadores y administradores:
 
-Copia el `database_id` que te devuelve y actualiza `wrangler.toml`:
+1. Seleccionar carrera y período.
+2. Cargar un CSV con `nrc`, `codigo`, `nombre`, `nivel` y `horas`.
+3. Generar una propuesta automática respetando disponibilidad docente, salas y capacidad.
+4. Revisar excepciones y publicar cuando la cobertura sea completa.
 
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "scheduler-pro-db"
-database_id = "TU-DATABASE-ID-AQUI"
-```
+El modo `Agregar y actualizar` conserva el backlog existente. El modo `Reemplazar período` elimina primero las secciones y asignaciones de la carrera/período seleccionados. El planificador tradicional permanece disponible en `/#/scheduler` para ajustes manuales.
 
-### 2. Aplicar migraciones en producción
+## Preparación de producción
+
+1. Crea la base D1 si aún no existe y copia su `database_id` a `wrangler.toml`:
 
 ```bash
-npx wrangler d1 execute scheduler-pro-db --remote --file=./migrations/0001_initial_schema.sql
-npx wrangler d1 execute scheduler-pro-db --remote --file=./migrations/0002_seed_data.sql
-npx wrangler d1 execute scheduler-pro-db --remote --file=./migrations/0003_app_settings.sql
+npm run db:create
 ```
 
-### 3. Autenticación demo
+2. Aplica las migraciones productivas, sin cargar el seed demo:
 
-La autenticación es deliberadamente demostrativa: solo acepta las cuentas sembradas y cualquier contraseña. No uses credenciales reales. Antes de convertir el proyecto a producción se debe reemplazar este flujo y configurar `JWT_SECRET` como secreto de Cloudflare.
+```bash
+npx wrangler d1 migrations apply scheduler-pro-db --remote
+```
 
-### 4. Desplegar a Cloudflare Pages
+3. Genera dos secretos diferentes y aleatorios, de al menos 32 caracteres, y guárdalos sin incluirlos en archivos versionados:
+
+```bash
+openssl rand -base64 48
+npx wrangler pages secret put JWT_SECRET --project-name scheduler-pro
+
+openssl rand -base64 48
+npx wrangler pages secret put BOOTSTRAP_TOKEN --project-name scheduler-pro
+```
+
+4. Despliega y crea el primer administrador una sola vez:
 
 ```bash
 npm run deploy
+
+curl -X POST 'https://TU-DOMINIO/api/auth/bootstrap' \
+  -H 'Content-Type: application/json' \
+  -H 'X-Bootstrap-Token: TU_BOOTSTRAP_TOKEN' \
+  --data '{"email":"admin@tu-dominio.cl","name":"Administrador","password":"UNA_CLAVE_UNICA_DE_12_O_MAS_CARACTERES"}'
 ```
 
-## 📊 Estructura del Proyecto
+5. Elimina inmediatamente `BOOTSTRAP_TOKEN` de los secretos del proyecto después de recibir una respuesta `201`. Luego inicia sesión y crea la primera carrera desde **Configuración → Carreras** antes de registrar coordinadores.
 
-```
-scheduler-pro/
-├── functions/           # Cloudflare Pages Functions (API)
-│   └── api/
-│       └── [[route]].ts # Catch-all API route con Hono
-├── migrations/          # Migraciones D1
-│   ├── 0001_initial_schema.sql
-│   └── 0002_seed_data.sql
-├── hooks/               # React Hooks personalizados
-│   ├── useScheduler.ts  # Estado del planificador
-│   └── useAuth.tsx      # Autenticación
-├── pages/               # Páginas de React
-│   ├── LoginPage.tsx
-│   ├── SchedulerPage.tsx
-│   └── ...
-├── services/            # Servicios
-│   └── api.ts           # Cliente API
-├── types.ts             # Tipos TypeScript compartidos
-├── wrangler.toml        # Configuración Cloudflare
-└── package.json
-```
-
-## 🧠 Motor de Reglas
-
-### Reglas Críticas (Bloquean publicación)
-| Código | Nombre | Descripción |
-|--------|--------|-------------|
-| TEACHER_DUPLICATE | Unicidad Docente | Mismo docente en dos lugares |
-| ROOM_OCCUPIED | Sala Ocupada | Sala ya asignada |
-| TEACHER_BLOCKED | Docente No Disponible | Horario bloqueado |
-
-### Advertencias
-| Código | Nombre | Impacto Score |
-|--------|--------|---------------|
-| LEVEL_CLASH | Choque de Nivel | -50 pts |
-| ROOM_TYPE_MISMATCH | Tipo Incompatible | -30 pts |
-| OVERCAPACITY | Sobrecapacidad | -20 pts |
-| FRIDAY_LAST_MODULE | Viernes Tarde | -15 pts |
-
-## 🔐 Seguridad (RLS Simulado)
-
-El sistema implementa Row Level Security a nivel de aplicación:
-
-- Cada coordinador solo ve datos de su carrera
-- Las salas compartidas (`is_shared = true`) son visibles por todos
-- Los administradores tienen acceso global
-
-## 📈 Score de Idoneidad
-
-El sistema calcula dinámicamente un score (0-100%) para cada slot:
-
-```
-Base: 100 pts
-+ 30 pts: Tipo de sala coincide (LAB para LAB)
-+ 20 pts: Preferencia del docente
-+ 20 pts: Horario contiguo con mismo nivel
-- 10 pts: Sala demasiado grande
-- 15 pts: Viernes último módulo
-- Penalización por warnings
-```
-
-## 🎯 Endpoints API
-
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| POST | /api/auth/login | Autenticación |
-| GET | /api/careers | Listar carreras |
-| GET | /api/teachers | Listar docentes |
-| GET | /api/rooms | Listar salas |
-| GET | /api/sections | Listar secciones |
-| GET | /api/schedule | Obtener horario |
-| POST | /api/schedule/assign | Asignar sección |
-| GET | /api/schedule/score | Calcular scores |
-| GET | /api/conflicts | Listar conflictos |
-| GET | /api/metrics/health | Métricas de salud |
-
-## 👤 Credenciales de Prueba
-
-| Email | Rol |
-|-------|-----|
-| admin@scheduler.pro | Administrador |
-| coordinador@kine.edu | Coordinador Kinesiología |
-
-> La autenticación es demo en todos los entornos: cualquier contraseña funciona únicamente para estas cuentas sembradas.
-
-## ✅ Verificación
+Si el frontend se sirve desde otro origen, configura `CORS_ORIGINS` con una lista explícita separada por comas. Las claves opcionales de IA también se almacenan como secretos:
 
 ```bash
-npm run check       # TypeScript + pruebas + build
-npm audit           # Debe finalizar sin vulnerabilidades conocidas
+npx wrangler pages secret put OPENAI_API_KEY --project-name scheduler-pro
+npx wrangler pages secret put GEMINI_API_KEY --project-name scheduler-pro
 ```
 
-## 📝 Licencia
+## Controles de seguridad
 
-MIT
+- Los IDs de usuarios y recursos nuevos son UUID generados por el servidor.
+- Un usuario accede a su perfil mediante `/api/auth/me`; la colección `/api/users` y sus mutaciones son solo para administradores.
+- Cada consulta y mutación valida rol y carrera en el servidor.
+- El usuario activo se vuelve a comprobar en D1 en cada solicitud autenticada.
+- Hay límites separados para login, API general y operaciones costosas, implementados mediante contadores atómicos en D1 para mantener compatibilidad con Cloudflare Pages.
+- Los JWT expiran, requieren un secreto productivo y nunca incluyen la contraseña.
+- La creación pública genera una cuenta `pending` e inactiva; un administrador debe verificar la identidad y aprobarla. No se genera ni devuelve ningún token de verificación.
+- La aplicación envía encabezados CSP, anti-framing, MIME sniffing y política de permisos.
+
+La política completa, incluido el procedimiento exigido antes de habilitar correo y SPF/DKIM/DMARC, está en [docs/SECURITY.md](docs/SECURITY.md).
+
+## Comandos principales
+
+```bash
+npm run typecheck   # Verificación TypeScript
+npm test            # Pruebas automatizadas
+npm run build       # Build productivo
+npm run check       # Typecheck + pruebas + build
+npm audit           # Dependencias vulnerables conocidas
+```
+
+La integración continua ejecuta `npm ci`, `npm run check` y bloquea vulnerabilidades de severidad alta.
+
+Los procedimientos de monitoreo, respaldo diario, recuperación D1 y reversión de versiones están documentados en [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+## API principal
+
+| Método | Endpoint | Acceso |
+|---|---|---|
+| `POST` | `/api/auth/login` | Público, limitado por tasa |
+| `POST` | `/api/auth/register` | Solicitud pública limitada por cliente y correo |
+| `GET` | `/api/auth/registration-options` | Carreras disponibles para el registro |
+| `POST` | `/api/auth/bootstrap` | Secreto de un solo uso y base vacía |
+| `GET` | `/api/auth/me` | Usuario autenticado |
+| `GET/POST/PUT/DELETE` | `/api/users` | Administrador |
+| `POST` | `/api/users/:id/approve` | Aprobación administrativa de cuentas pendientes |
+| `GET` | `/api/teachers`, `/api/subjects`, `/api/sections` | Filtrado por carrera; las secciones también por período (`period_id`) |
+| `POST` | `/api/import/horarios` | Importa secciones aisladas por carrera y período (`career_id`, `period_id`) |
+| `POST/PUT/DELETE` | Recursos académicos | Administrador o coordinador de la carrera |
+| `GET/POST/PUT/DELETE` | `/api/schedule` | Autorización por carrera |
+| `POST` | `/api/schedule/publish` | Horario completo y sin conflictos críticos |
+
+## Despliegue
+
+Antes de publicar:
+
+```bash
+npm run check
+npm audit --audit-level=high
+npx wrangler d1 migrations apply scheduler-pro-db --remote
+npm run deploy
+```
+
+La configuración DNS de correo no forma parte del despliegue actual porque el producto no envía emails. No debe habilitarse correo hasta verificar SPF, DKIM y DMARC con el proveedor elegido.

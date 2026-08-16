@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/MainLayout';
 import * as dataStore from '../lib/dataStore';
+import { useAcademicPeriods } from '../lib/academicPeriods';
 
 interface Subject {
     id: string;
@@ -16,7 +17,7 @@ const HorariosPage: React.FC = () => {
     const [subjects, setSubjects] = useState<Subject[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
-    const [selectedPeriod, setSelectedPeriod] = useState('per-2026-1');
+    const { selectedPeriod, setSelectedPeriod } = useAcademicPeriods();
 
     useEffect(() => {
         const fetchSubjects = async () => {

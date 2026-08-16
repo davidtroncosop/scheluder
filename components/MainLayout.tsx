@@ -16,7 +16,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
     children,
     title,
     actions,
-    selectedPeriod = '2026-1',
+    selectedPeriod = '',
     onPeriodChange = () => { },
     showPeriodSelector = true
 }) => {
@@ -75,6 +75,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
     };
 
     const mainNavItems = [
+        ...(userInfo?.role === 'admin' ? [{ name: 'Resumen institucional', icon: 'dashboard', path: '/admin' }] : []),
+        { name: 'Modo asistido', icon: 'route', path: '/assistant' },
         { name: 'Planificador', icon: 'grid_view', path: '/scheduler' },
         { name: 'Horarios', icon: 'calendar_month', path: '/horarios' },
     ];

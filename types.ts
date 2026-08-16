@@ -185,6 +185,39 @@ export interface HealthMetrics {
   health_score: number;
 }
 
+export interface AdminOverviewCareer {
+  id: string;
+  name: string;
+  code: string;
+  subjects: number;
+  sections: number;
+  required_slots: number;
+  assigned_slots: number;
+  published_slots: number;
+  teachers: number;
+  rooms: number;
+  active_conflicts: number;
+  schedule_status: 'draft' | 'review' | 'published';
+}
+
+export interface AdminOverview {
+  period: Period | null;
+  totals: {
+    careers: number;
+    active_users: number;
+    pending_users: number;
+    teachers: number;
+    rooms: number;
+    subjects: number;
+    sections: number;
+    required_slots: number;
+    assigned_slots: number;
+    published_slots: number;
+    active_conflicts: number;
+  };
+  careers: AdminOverviewCareer[];
+}
+
 export interface SectionWithDetails extends Section {
   subject_name: string;
   subject_code: string;

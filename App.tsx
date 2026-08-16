@@ -2,6 +2,8 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate } from './lib/router';
 import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import AdminOverviewPage from './pages/AdminOverviewPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
@@ -11,6 +13,7 @@ const FileUploadPage = lazy(() => import('./pages/FileUploadPage'));
 const MappingPage = lazy(() => import('./pages/MappingPage'));
 const TeachersPage = lazy(() => import('./pages/TeachersPage'));
 const SchedulerPage = lazy(() => import('./pages/SchedulerPage'));
+const AssistedPlannerPage = lazy(() => import('./pages/AssistedPlannerPage'));
 const AsignaturasPage = lazy(() => import('./pages/AsignaturasPage'));
 const SalasPage = lazy(() => import('./pages/SalasPage'));
 const HorariosPage = lazy(() => import('./pages/HorariosPage'));
@@ -51,6 +54,8 @@ const App: React.FC = () => {
             <Routes>
               {/* Auth */}
               <Route path="/" element={<LoginPage onToggleDarkMode={toggleDarkMode} isDarkMode={isDarkMode} />} />
+              <Route path="/register" element={<RegisterPage onToggleDarkMode={toggleDarkMode} isDarkMode={isDarkMode} />} />
+              <Route path="/admin" element={protect(<AdminOverviewPage />)} />
 
               {/* Import Flow */}
               <Route path="/table-selection" element={protect(<TableSelectionPage />)} />
@@ -58,6 +63,7 @@ const App: React.FC = () => {
               <Route path="/mapping" element={protect(<MappingPage />)} />
 
               {/* Main Application */}
+              <Route path="/assistant" element={protect(<AssistedPlannerPage />)} />
               <Route path="/scheduler" element={protect(<SchedulerPage />)} />
               <Route path="/horarios" element={protect(<HorariosPage />)} />
 

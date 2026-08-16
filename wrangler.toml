@@ -9,5 +9,6 @@ database_id = "32f8c8bc-73cd-4be2-8830-e1a1e719345c"
 migrations_dir = "migrations"
 
 [vars]
-ENVIRONMENT = "demo"
-DEMO_AUTH = "true"
+ENVIRONMENT = "production"
+DEMO_AUTH = "false"
+APP_VERSION = "1.1.0"

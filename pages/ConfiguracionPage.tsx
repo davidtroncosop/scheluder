@@ -3,10 +3,11 @@ import { MainLayout } from '../components/MainLayout';
 import * as dataStore from '../lib/dataStore';
 import api from '../services/api';
 import { session } from '../lib/session';
+import { useAcademicPeriods } from '../lib/academicPeriods';
 
 const ConfiguracionPage: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'general' | 'timeslots' | 'periods' | 'users'>('general');
-    const [selectedPeriod, setSelectedPeriod] = useState('per-2026-1');
+    const [activeTab, setActiveTab] = useState<'general' | 'careers' | 'timeslots' | 'periods' | 'users'>('general');
+    const { selectedPeriod, setSelectedPeriod } = useAcademicPeriods();
 
     // General Settings State
     const [settings, setSettings] = useState({
@@ -23,6 +24,15 @@ const ConfiguracionPage: React.FC = () => {
     const [timeslots, setTimeslots] = useState<dataStore.LocalTimeslot[]>([]);
     const [periods, setPeriods] = useState<dataStore.LocalPeriod[]>([]);
     const [users, setUsers] = useState<any[]>([]);
+    const [careers, setCareers] = useState<Array<{ id: string; name: string; code: string }>>([]);
+    const [editingCareer, setEditingCareer] = useState<{ id: string; name: string; code: string } | null>(null);
+    const [careerFormData, setCareerFormData] = useState({ name: '', code: '' });
+    const isAdmin = session.getUser()?.role === 'admin';
+    const roleLabels: Record<string, string> = {
+        admin: 'Administrador',
+        coordinator: 'Coordinador',
+        viewer: 'Lector',
+    };
 
     // Modals States
     const [isTimeslotModalOpen, setIsTimeslotModalOpen] = useState(false);
@@ -48,7 +58,9 @@ const ConfiguracionPage: React.FC = () => {
     const [userFormData, setUserFormData] = useState({
         name: '',
         email: '',
-        role: 'Lector',
+        role: 'viewer',
+        career_id: '',
+        password: '',
     });
 
     // Load data from storage on mount
@@ -58,30 +70,33 @@ const ConfiguracionPage: React.FC = () => {
         if (savedSettings) {
             try { setSettings(JSON.parse(savedSettings)); } catch (e) { console.error(e); }
         }
-        const careerId = session.getUser()?.career_id || 'car-kine-001';
-        api.getSettings(careerId).then(remote => {
-            if (Object.keys(remote).length > 0) setSettings(current => ({ ...current, ...remote }));
-        }).catch(() => { /* offline demo uses local settings */ });
-
-        // Timeslots
-        setTimeslots(dataStore.getCustomTimeslots());
-
-        // Periods
-        setPeriods(dataStore.getCustomPeriods());
-
-        // Users
-        const savedUsers = localStorage.getItem('scheduler_users');
-        if (savedUsers) {
-            try { setUsers(JSON.parse(savedUsers)); } catch (e) { console.error(e); }
-        } else {
-            const initialUsers = [
-                { id: 'u1', name: 'Diego Troncoso', email: 'diego@ejemplo.com', role: 'Administrador', avatar: 'DT' },
-                { id: 'u2', name: 'María Rivas', email: 'm.rivas@ejemplo.com', role: 'Editor', avatar: 'MR' },
-                { id: 'u3', name: 'Roberto Soto', email: 'r.soto@ejemplo.com', role: 'Lector', avatar: 'RS' },
-            ];
-            setUsers(initialUsers);
-            localStorage.setItem('scheduler_users', JSON.stringify(initialUsers));
+        const ownCareerId = session.getUser()?.career_id;
+        if (ownCareerId) {
+            api.getSettings(ownCareerId).then(remote => {
+                if (Object.keys(remote).length > 0) setSettings(current => ({ ...current, ...remote }));
+            }).catch(() => { /* offline demo uses local settings */ });
         }
+
+        Promise.all([api.getTimeslots(), api.getPeriods(), api.getCareers(), ...(isAdmin ? [api.getUsers()] : [])])
+            .then(([remoteTimeslots, remotePeriods, remoteCareers, remoteUsers]) => {
+                setTimeslots((remoteTimeslots as any[]).map(slot => ({ ...slot, type: Number(slot.order_index) <= 4 ? 'Mañana' : 'Tarde' })));
+                setPeriods((remotePeriods as any[]).map(period => ({
+                    id: period.id, name: period.name, status: period.is_active ? 'Activo' : 'Borrador',
+                    startDate: period.start_date, endDate: period.end_date,
+                })));
+                const mappedCareers = (remoteCareers as any[]).map(career => ({ id: career.id, name: career.name, code: career.code }));
+                setCareers(mappedCareers);
+                if (!ownCareerId && mappedCareers[0]) {
+                    api.getSettings(mappedCareers[0].id).then(remote => {
+                        if (Object.keys(remote).length > 0) setSettings(current => ({ ...current, ...remote }));
+                    }).catch(() => undefined);
+                }
+                if (remoteUsers) setUsers((remoteUsers as any[]).map(user => ({
+                    ...user,
+                    avatar: user.name.split(' ').map((part: string) => part[0]).slice(0, 2).join('').toUpperCase(),
+                })));
+            })
+            .catch(error => console.error('No fue posible cargar la configuración remota', error));
     }, []);
 
     // Save All configuration
@@ -89,9 +104,15 @@ const ConfiguracionPage: React.FC = () => {
         localStorage.setItem('scheduler_general_settings', JSON.stringify(settings));
         dataStore.saveCustomTimeslots(timeslots);
         dataStore.saveCustomPeriods(periods);
-        localStorage.setItem('scheduler_users', JSON.stringify(users));
-        const careerId = session.getUser()?.career_id || 'car-kine-001';
-        try { await api.saveSettings({ ...settings, career_id: careerId }); } catch { /* offline demo */ }
+        const careerId = session.getUser()?.career_id || careers[0]?.id;
+        if (!careerId) {
+            alert('Primero debes crear una carrera.');
+            return;
+        }
+        try { await api.saveSettings({ ...settings, career_id: careerId }); } catch (error) {
+            alert(error instanceof Error ? error.message : 'No fue posible guardar la configuración');
+            return;
+        }
         alert('✅ Configuración del sistema guardada exitosamente.');
     };
 
@@ -117,7 +138,7 @@ const ConfiguracionPage: React.FC = () => {
         setIsTimeslotModalOpen(true);
     };
 
-    const handleSaveTimeslot = (e: React.FormEvent) => {
+    const handleSaveTimeslot = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!timeslotFormData.label.trim()) return;
 
@@ -142,13 +163,30 @@ const ConfiguracionPage: React.FC = () => {
             updated = [...timeslots, newSlot];
         }
 
+        try {
+            const result = await api.saveTimeslot({
+                id: editingTimeslot?.id,
+                label: timeslotFormData.label,
+                start_time: timeslotFormData.start_time,
+                end_time: timeslotFormData.end_time,
+                order_index: editingTimeslot?.order_index || timeslots.length + 1,
+            }, Boolean(editingTimeslot));
+            if (!editingTimeslot && result.id) updated[updated.length - 1].id = result.id;
+        } catch (error) {
+            alert(error instanceof Error ? error.message : 'No fue posible guardar el bloque');
+            return;
+        }
         setTimeslots(updated);
         dataStore.saveCustomTimeslots(updated);
         setIsTimeslotModalOpen(false);
     };
 
-    const handleDeleteTimeslot = (id: string) => {
+    const handleDeleteTimeslot = async (id: string) => {
         if (window.confirm('¿Está seguro de que desea eliminar este bloque horario?')) {
+            try { await api.deleteTimeslot(id); } catch (error) {
+                alert(error instanceof Error ? error.message : 'No fue posible eliminar el bloque');
+                return;
+            }
             const updated = timeslots.filter(t => t.id !== id);
             setTimeslots(updated);
             dataStore.saveCustomTimeslots(updated);
@@ -177,7 +215,7 @@ const ConfiguracionPage: React.FC = () => {
         setIsPeriodModalOpen(true);
     };
 
-    const handleSavePeriod = (e: React.FormEvent) => {
+    const handleSavePeriod = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!periodFormData.name.trim()) return;
 
@@ -201,13 +239,31 @@ const ConfiguracionPage: React.FC = () => {
             updated = [...periods, newPeriod];
         }
 
+        try {
+            const result = await api.savePeriod({
+                id: editingPeriod?.id,
+                code: periodFormData.name,
+                name: periodFormData.name,
+                start_date: periodFormData.startDate,
+                end_date: periodFormData.endDate,
+                is_active: periodFormData.status === 'Activo',
+            }, Boolean(editingPeriod));
+            if (!editingPeriod && result.id) updated[updated.length - 1].id = result.id;
+        } catch (error) {
+            alert(error instanceof Error ? error.message : 'No fue posible guardar el período');
+            return;
+        }
         setPeriods(updated);
         dataStore.saveCustomPeriods(updated);
         setIsPeriodModalOpen(false);
     };
 
-    const handleDeletePeriod = (id: string, name: string) => {
+    const handleDeletePeriod = async (id: string, name: string) => {
         if (window.confirm(`¿Está seguro de que desea eliminar el período académico "${name}"?`)) {
+            try { await api.deletePeriod(id); } catch (error) {
+                alert(error instanceof Error ? error.message : 'No fue posible eliminar el período');
+                return;
+            }
             const updated = periods.filter(p => p.id !== id);
             setPeriods(updated);
             dataStore.saveCustomPeriods(updated);
@@ -222,60 +278,101 @@ const ConfiguracionPage: React.FC = () => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
+                career_id: user.career_id || '',
+                password: '',
             });
         } else {
             setEditingUser(null);
             setUserFormData({
                 name: '',
                 email: '',
-                role: 'Lector',
+                role: 'viewer',
+                career_id: careers[0]?.id || '',
+                password: '',
             });
         }
         setIsUserModalOpen(true);
     };
 
-    const handleSaveUser = (e: React.FormEvent) => {
+    const handleSaveUser = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!userFormData.name.trim() || !userFormData.email.trim()) return;
-
-        let updated: any[];
-        if (editingUser) {
-            updated = users.map(u => u.id === editingUser.id ? {
-                ...u,
+        if (!userFormData.name.trim() || !userFormData.email.trim() || (!editingUser && userFormData.password.length < 12)) return;
+        try {
+            await api.saveUser({
+                id: editingUser?.id,
                 name: userFormData.name,
                 email: userFormData.email,
                 role: userFormData.role,
-                avatar: userFormData.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase(),
-            } : u);
-        } else {
-            const newUser = {
-                id: `usr-${Date.now()}`,
-                name: userFormData.name,
-                email: userFormData.email,
-                role: userFormData.role,
-                avatar: userFormData.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase(),
-            };
-            updated = [...users, newUser];
+                career_id: userFormData.role === 'admin' ? null : userFormData.career_id,
+                ...(userFormData.password ? { password: userFormData.password } : {}),
+            }, Boolean(editingUser));
+            const remote = await api.getUsers();
+            setUsers(remote.map(user => ({
+                ...user,
+                avatar: user.name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase(),
+            })));
+        } catch (error) {
+            alert(error instanceof Error ? error.message : 'No fue posible guardar el usuario');
+            return;
         }
-
-        setUsers(updated);
-        localStorage.setItem('scheduler_users', JSON.stringify(updated));
         setIsUserModalOpen(false);
     };
 
-    const handleDeleteUser = (id: string) => {
+    const handleDeleteUser = async (id: string) => {
         if (window.confirm('¿Está seguro de que desea retirar el acceso para este usuario?')) {
-            const updated = users.filter(u => u.id !== id);
-            setUsers(updated);
-            localStorage.setItem('scheduler_users', JSON.stringify(updated));
+            try { await api.deleteUser(id); } catch (error) {
+                alert(error instanceof Error ? error.message : 'No fue posible retirar el acceso');
+                return;
+            }
+            setUsers(current => current.filter(user => user.id !== id));
+        }
+    };
+
+    const handleApproveUser = async (id: string) => {
+        try {
+            await api.approveUser(id);
+            setUsers(current => current.map(user => user.id === id ? { ...user, is_active: 1, account_status: 'active' } : user));
+        } catch (error) {
+            alert(error instanceof Error ? error.message : 'No fue posible aprobar la cuenta');
+        }
+    };
+
+    const handleSaveCareer = async (event: React.FormEvent) => {
+        event.preventDefault();
+        if (!careerFormData.name.trim() || !careerFormData.code.trim()) return;
+        try {
+            await api.saveCareer({
+                id: editingCareer?.id,
+                name: careerFormData.name.trim(),
+                code: careerFormData.code.trim().toUpperCase(),
+            }, Boolean(editingCareer));
+            const remote = await api.getCareers();
+            setCareers(remote.map(career => ({ id: career.id, name: career.name, code: career.code })));
+            setEditingCareer(null);
+            setCareerFormData({ name: '', code: '' });
+        } catch (error) {
+            alert(error instanceof Error ? error.message : 'No fue posible guardar la carrera');
+        }
+    };
+
+    const handleDeleteCareer = async (career: { id: string; name: string }) => {
+        if (!window.confirm(`¿Eliminar la carrera "${career.name}"?`)) return;
+        try {
+            await api.deleteCareer(career.id);
+            setCareers(current => current.filter(item => item.id !== career.id));
+        } catch (error) {
+            alert(error instanceof Error ? error.message : 'No fue posible eliminar la carrera');
         }
     };
 
     const tabs = [
         { id: 'general', label: 'General', icon: 'settings' },
-        { id: 'timeslots', label: 'Bloques Horarios', icon: 'schedule' },
-        { id: 'periods', label: 'Períodos Académicos', icon: 'event' },
-        { id: 'users', label: 'Usuarios y Permisos', icon: 'manage_accounts' },
+        ...(isAdmin ? [
+            { id: 'careers', label: 'Carreras', icon: 'school' },
+            { id: 'timeslots', label: 'Bloques Horarios', icon: 'schedule' },
+            { id: 'periods', label: 'Períodos Académicos', icon: 'event' },
+            { id: 'users', label: 'Usuarios y Permisos', icon: 'manage_accounts' },
+        ] as const : []),
     ] as const;
 
     return (
@@ -497,6 +594,43 @@ const ConfiguracionPage: React.FC = () => {
                         </div>
                     )}
 
+                    {activeTab === 'careers' && (
+                        <div className="p-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)]">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Carreras</h3>
+                                <p className="mt-1 text-xs text-slate-400">Cada coordinador queda limitado a una de estas carreras.</p>
+                                <div className="mt-6 divide-y divide-slate-100 dark:divide-slate-800 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                    {careers.length === 0 && <p className="p-5 text-sm text-slate-400">Aún no hay carreras. Crea la primera para registrar coordinadores.</p>}
+                                    {careers.map(career => (
+                                        <div key={career.id} className="flex items-center justify-between p-4">
+                                            <div>
+                                                <p className="text-sm font-bold text-slate-900 dark:text-white">{career.name}</p>
+                                                <p className="text-xs font-mono text-slate-400">{career.code}</p>
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <button onClick={() => { setEditingCareer(career); setCareerFormData({ name: career.name, code: career.code }); }} className="size-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-primary dark:hover:bg-slate-800" title="Editar carrera">
+                                                    <span className="material-symbols-outlined text-base">edit</span>
+                                                </button>
+                                                <button onClick={() => handleDeleteCareer(career)} className="size-8 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/20" title="Eliminar carrera">
+                                                    <span className="material-symbols-outlined text-base">delete</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <form onSubmit={handleSaveCareer} className="h-fit space-y-4 rounded-2xl border border-slate-100 p-5 dark:border-slate-800">
+                                <h4 className="text-sm font-bold text-slate-900 dark:text-white">{editingCareer ? 'Editar carrera' : 'Nueva carrera'}</h4>
+                                <input required maxLength={120} value={careerFormData.name} onChange={event => setCareerFormData(current => ({ ...current, name: event.target.value }))} placeholder="Nombre de la carrera" className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm dark:border-slate-800 dark:bg-slate-900 dark:text-white" />
+                                <input required minLength={2} maxLength={20} pattern="[A-Za-z0-9_-]+" value={careerFormData.code} onChange={event => setCareerFormData(current => ({ ...current, code: event.target.value.toUpperCase() }))} placeholder="Código, ej. KINE" className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm font-mono uppercase dark:border-slate-800 dark:bg-slate-900 dark:text-white" />
+                                <div className="flex justify-end gap-2">
+                                    {editingCareer && <button type="button" onClick={() => { setEditingCareer(null); setCareerFormData({ name: '', code: '' }); }} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-500 dark:border-slate-800">Cancelar</button>}
+                                    <button type="submit" className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white">Guardar Carrera</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
                     {activeTab === 'users' && (
                         <div className="p-0">
                             <div className="p-8 border-b border-slate-50 dark:border-slate-800 flex justify-between items-center">
@@ -520,14 +654,26 @@ const ConfiguracionPage: React.FC = () => {
                                             </div>
                                             <div>
                                                 <p className="text-sm font-bold text-slate-900 dark:text-white">{user.name}</p>
-                                                <p className="text-xs text-slate-400">{user.email}</p>
+                                                <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                                                    <p className="text-xs text-slate-400">{user.email}</p>
+                                                    <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${user.account_status === 'pending' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' : user.account_status === 'disabled' || !user.is_active ? 'bg-slate-100 text-slate-500 dark:bg-slate-800' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'}`}>
+                                                        {user.account_status === 'pending' ? 'Pendiente' : user.account_status === 'disabled' || !user.is_active ? 'Desactivada' : 'Activa'}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-6">
-                                            <span className={`text-[10px] font-black uppercase tracking-widest ${user.role === 'Administrador' ? 'text-primary' : 'text-slate-500'}`}>
-                                                {user.role}
+                                            <span className={`text-[10px] font-black uppercase tracking-widest ${user.role === 'admin' ? 'text-primary' : 'text-slate-500'}`}>
+                                                {roleLabels[user.role] || user.role}
                                             </span>
                                             <div className="flex gap-1">
+                                                {user.account_status === 'pending' && <button
+                                                    onClick={() => handleApproveUser(user.id)}
+                                                    className="size-8 rounded bg-emerald-50 text-emerald-600 transition-colors hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                                    title="Aprobar cuenta"
+                                                >
+                                                    <span className="material-symbols-outlined text-base">how_to_reg</span>
+                                                </button>}
                                                 <button 
                                                     onClick={() => openUserModal(user)}
                                                     className="size-8 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-primary transition-colors flex items-center justify-center"
@@ -785,9 +931,25 @@ const ConfiguracionPage: React.FC = () => {
                                 <input
                                     type="email"
                                     required
+                                    disabled={Boolean(editingUser)}
                                     placeholder="Ej: m.rivas@universidad.cl"
                                     value={userFormData.email}
                                     onChange={(e) => setUserFormData({ ...userFormData, email: e.target.value })}
+                                    className="w-full rounded-xl border border-slate-200 dark:border-slate-855 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                                    {editingUser ? 'Nueva contraseña (opcional)' : 'Contraseña temporal'}
+                                </label>
+                                <input
+                                    type="password"
+                                    required={!editingUser}
+                                    minLength={12}
+                                    autoComplete="new-password"
+                                    value={userFormData.password}
+                                    onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
                                     className="w-full rounded-xl border border-slate-200 dark:border-slate-855 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
                                 />
                             </div>
@@ -801,11 +963,28 @@ const ConfiguracionPage: React.FC = () => {
                                     onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value })}
                                     className="w-full rounded-xl border border-slate-200 dark:border-slate-855 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
                                 >
-                                    <option value="Administrador">Administrador Global</option>
-                                    <option value="Editor">Editor de Horarios</option>
-                                    <option value="Lector">Lector (Solo Vista)</option>
+                                    <option value="admin">Administrador Global</option>
+                                    <option value="coordinator">Coordinador de Horarios</option>
+                                    <option value="viewer">Lector (Solo Vista)</option>
                                 </select>
                             </div>
+
+                            {userFormData.role !== 'admin' && (
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                                        Carrera
+                                    </label>
+                                    <select
+                                        required
+                                        value={userFormData.career_id}
+                                        onChange={(e) => setUserFormData({ ...userFormData, career_id: e.target.value })}
+                                        className="w-full rounded-xl border border-slate-200 dark:border-slate-855 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
+                                    >
+                                        <option value="">Selecciona una carrera</option>
+                                        {careers.map(career => <option key={career.id} value={career.id}>{career.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
 
                             <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
                                 <button

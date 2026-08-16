@@ -1,8 +1,11 @@
 {
   "name": "scheduler-pro",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -11,14 +14,17 @@
     "check": "npm run typecheck && npm run test && npm run build",
     "preview": "vite preview",
     "db:create": "wrangler d1 create scheduler-pro-db",
-    "db:migrate": "wrangler d1 execute scheduler-pro-db --local --file=./migrations/0001_initial_schema.sql && wrangler d1 execute scheduler-pro-db --local --file=./migrations/0003_app_settings.sql",
-    "db:seed": "wrangler d1 execute scheduler-pro-db --local --file=./migrations/0002_seed_data.sql",
+    "db:migrate": "wrangler d1 migrations apply scheduler-pro-db --local",
+    "db:seed": "wrangler d1 execute scheduler-pro-db --local --file=./seed/demo_data.sql",
     "db:setup": "npm run db:migrate && npm run db:seed",
-    "pages:dev": "npm run build && wrangler pages dev ./dist --d1=DB=scheduler-pro-db --local",
-    "deploy": "npm run build && wrangler pages deploy ./dist"
+    "db:backup": "bash ./scripts/db-backup.sh scheduler-pro-db",
+    "db:rollback": "bash ./scripts/db-rollback.sh",
+    "monitor:production": "node ./scripts/monitor-production.mjs",
+    "pages:dev": "npm run build && wrangler pages dev ./dist",
+    "deploy": "npm run build && wrangler pages deploy ./dist --project-name scheduler-pro --branch production"
   },
   "dependencies": {
-    "hono": "^4.12.33",
+    "hono": "^4.13.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "react": "^19.2.8",
@@ -40,6 +46,8 @@
     "wrangler": "^4.118.0"
   },
   "overrides": {
-    "dompurify": "^3.4.12"
+    "dompurify": "^3.4.13",
+    "nanoid": "^3.3.18",
+    "undici": "^7.29.0"
   }
 }

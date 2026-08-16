@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/MainLayout';
 import * as dataStore from '../lib/dataStore';
+import { OFFLINE_DEMO_ENABLED } from '../lib/runtime';
 import api from '../services/api';
+import { useAcademicPeriods } from '../lib/academicPeriods';
 
 interface Room {
     id: string;
@@ -19,7 +21,7 @@ const SalasPage: React.FC = () => {
     const [rooms, setRooms] = useState<Room[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedType, setSelectedType] = useState<string | null>(null);
-    const [selectedPeriod, setSelectedPeriod] = useState('per-2026-1');
+    const { selectedPeriod, setSelectedPeriod } = useAcademicPeriods();
 
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -70,7 +72,13 @@ const SalasPage: React.FC = () => {
                 setLoading(false);
                 return;
             }
-        } catch { /* offline demo fallback */ }
+        } catch (error) {
+            if (!OFFLINE_DEMO_ENABLED) {
+                setLoading(false);
+                alert(error instanceof Error ? error.message : 'No fue posible cargar las salas');
+                return;
+            }
+        }
         // First try localStorage
         const localRooms = dataStore.getRooms();
         if (localRooms.length > 0) {
@@ -154,7 +162,12 @@ const SalasPage: React.FC = () => {
 
         try {
             await api.saveRoom({ id, name: formData.name, building: formData.building, floor: formData.floor, type: formData.type, capacity: formData.capacity, is_shared: formData.is_shared }, Boolean(editingRoom));
-        } catch { /* offline demo fallback */ }
+        } catch (error) {
+            if (!OFFLINE_DEMO_ENABLED) {
+                alert(error instanceof Error ? error.message : 'No fue posible guardar la sala');
+                return;
+            }
+        }
         dataStore.addOrUpdateRoom(newRoomData);
         await loadRoomsList();
         setIsModalOpen(false);
@@ -162,7 +175,12 @@ const SalasPage: React.FC = () => {
 
     const handleDeleteRoom = async (id: string, name: string) => {
         if (window.confirm(`¿Está seguro de que desea eliminar la sala "${name}"?`)) {
-            try { await api.deleteRoom(id); } catch { /* offline demo */ }
+            try { await api.deleteRoom(id); } catch (error) {
+                if (!OFFLINE_DEMO_ENABLED) {
+                    alert(error instanceof Error ? error.message : 'No fue posible eliminar la sala');
+                    return;
+                }
+            }
             dataStore.deleteRoom(id);
             setRooms(prev => prev.filter(r => r.id !== id));
         }

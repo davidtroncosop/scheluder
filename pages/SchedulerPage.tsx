@@ -4,6 +4,9 @@ import { Link, useLocation, useNavigate } from '../lib/router';
 import * as dataStore from '../lib/dataStore';
 import ConflictPanel from '../components/ConflictPanel';
 import api from '../services/api';
+import { OFFLINE_DEMO_ENABLED } from '../lib/runtime';
+import { session } from '../lib/session';
+import { useAcademicPeriods } from '../lib/academicPeriods';
 import {
   calculateHealth,
   mapBackendAssignments,
@@ -51,7 +54,7 @@ const SchedulerPage: React.FC = () => {
   const [selectedSection, setSelectedSection] = useState<Section | null>(null);
 
   // Period and workflow states
-  const [selectedPeriod, setSelectedPeriod] = useState('per-2026-1');
+  const { periods, selectedPeriod, setSelectedPeriod } = useAcademicPeriods();
   const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
   const [scheduleStatus, setScheduleStatus] = useState<'draft' | 'review' | 'published'>('draft');
   const [showPeriodDropdown, setShowPeriodDropdown] = useState(false);
@@ -117,7 +120,7 @@ const SchedulerPage: React.FC = () => {
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // Collapsible sidebar state
 
-  // Available rooms from localStorage
+  // Available rooms from the authenticated sync cache (or explicit local demo).
   // Load rooms and handle mapping between local/remote field names
   const refreshRooms = useCallback(() => {
     const rooms = dataStore.getRooms();
@@ -128,7 +131,7 @@ const SchedulerPage: React.FC = () => {
         type: (r.tipo || r.type || 'TEO').toUpperCase(),
         capacity: r.capacidad || r.capacity || 30
       }))
-      : [
+      : OFFLINE_DEMO_ENABLED ? [
         { id: 'room-1', name: 'SALA 201', type: 'TEO', capacity: 40 },
         { id: 'room-2', name: 'SALA 202', type: 'TEO', capacity: 40 },
         { id: 'room-3', name: 'SALA 204', type: 'TEO', capacity: 35 },
@@ -136,7 +139,7 @@ const SchedulerPage: React.FC = () => {
         { id: 'room-5', name: 'LAB 2', type: 'LAB', capacity: 20 },
         { id: 'room-6', name: 'SIMULADOR 1', type: 'SIM', capacity: 15 },
         { id: 'room-7', name: 'SIMULADOR 2', type: 'SIM', capacity: 15 },
-      ];
+      ] : [];
     setAvailableRooms(mapped);
   }, []);
 
@@ -160,22 +163,40 @@ const SchedulerPage: React.FC = () => {
     return compatible;
   };
 
-  // Available teachers list - combine imported and demo teachers
+  // Available teachers list; sample names exist only in the explicit local demo.
   const availableTeachers = React.useMemo(() => {
     const importedNames = teachers.map(t => t.nombre).filter(Boolean);
-    const demoNames = ['Prof. Reyes', 'Prof. Soto', 'Dra. Rivas', 'Dr. Valenzuela', 'Ayud. Pérez', 'Prof. González', 'Dra. Martínez'];
+    const demoNames = OFFLINE_DEMO_ENABLED ? ['Prof. Reyes', 'Prof. Soto', 'Dra. Rivas', 'Dr. Valenzuela', 'Ayud. Pérez', 'Prof. González', 'Dra. Martínez'] : [];
     // Combine both lists, removing duplicates
     const allNames = [...new Set([...importedNames, ...demoNames])];
     return allNames;
   }, [teachers]);
 
   // Function to update teacher for a section
-  const updateSectionTeacher = (sectionId: string, teacherName: string) => {
-    setSections(prev => prev.map(s =>
-      s.id === sectionId ? { ...s, teacher_name: teacherName } : s
-    ));
+  const updateSectionTeacher = async (sectionId: string, teacherName: string) => {
+    const teacher = teachers.find(item => item.nombre === teacherName);
+    if (dataStore.getAuthToken()) {
+      if (!teacher) {
+        setError('El docente seleccionado no existe en la base de datos.');
+        return;
+      }
+      try {
+        await api.updateSectionTeacher(sectionId, teacher.id);
+        await loadScheduleData();
+      } catch (updateError) {
+        setError(updateError instanceof Error ? updateError.message : 'No fue posible asignar el docente');
+        return;
+      }
+    } else if (!OFFLINE_DEMO_ENABLED) {
+      setError('La sesión expiró. Vuelve a iniciar sesión.');
+      return;
+    } else {
+      setSections(prev => prev.map(s =>
+        s.id === sectionId ? { ...s, teacher_name: teacherName } : s
+      ));
+      setHasChanges(true);
+    }
     setTeacherDropdownOpen(null);
-    setHasChanges(true);
     addAuditEntry('assign', `Asignado ${teacherName} a NRC ${sections.find(s => s.id === sectionId)?.nrc}`);
   };
 
@@ -190,12 +211,6 @@ const SchedulerPage: React.FC = () => {
     }, ...prev]);
   };
 
-  const periods = [
-    { id: 'per-2026-1', code: '2026-1', name: '2026 - Primer Semestre', status: 'active' },
-    { id: 'per-2026-2', code: '2026-2', name: '2026 - Segundo Semestre', status: 'draft' },
-    { id: 'per-2025-2', code: '2025-2', name: '2025 - Segundo Semestre', status: 'published' },
-  ];
-
   const statusLabels = {
     draft: { label: 'Borrador', color: 'bg-slate-500', icon: 'edit_note' },
     review: { label: 'En Revisión', color: 'bg-amber-500', icon: 'rate_review' },
@@ -204,6 +219,8 @@ const SchedulerPage: React.FC = () => {
 
   // Navigation items
   const mainNavItems = [
+    ...(session.getUser()?.role === 'admin' ? [{ name: 'Resumen institucional', icon: 'dashboard', path: '/admin', badge: false }] : []),
+    { name: 'Modo asistido', icon: 'route', path: '/assistant', badge: false },
     { name: 'Planificador', icon: 'grid_view', path: '/scheduler', badge: conflicts.filter(c => c.type === 'CRITICAL').length > 0 },
     { name: 'Horarios', icon: 'calendar_month', path: '/horarios' },
   ];
@@ -229,6 +246,12 @@ const SchedulerPage: React.FC = () => {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
+        // The online planner must load the real time blocks as well. Without
+        // them the backlog can be selected, but the calendar has no drop cells.
+        const timeslotsRes = await fetch('/api/timeslots', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
         const conflictsRes = await fetch(`/api/conflicts?resolved=false`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -238,6 +261,19 @@ const SchedulerPage: React.FC = () => {
         const auditRes = await fetch(`/api/audit?period_id=${encodeURIComponent(selectedPeriod)}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
+
+        if (timeslotsRes.ok) {
+          const rawTimeslots = await timeslotsRes.json() as Array<Record<string, any>>;
+          setTimeslots(rawTimeslots.map(slot => ({
+            id: slot.id,
+            label: slot.label,
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+            order_index: Number(slot.order_index || 0),
+          })));
+        } else {
+          setTimeslots(dataStore.getCustomTimeslots());
+        }
 
         if (periodRes.ok && sectionsRes.ok) {
           const rawAsgs = await periodRes.json() as any[];
@@ -297,11 +333,12 @@ const SchedulerPage: React.FC = () => {
         }
       }
       
-      // Offline fallback: load from local storage
-      loadLocalOrMockData();
+      if (OFFLINE_DEMO_ENABLED) loadLocalOrMockData();
+      else setError('No fue posible cargar el horario desde el servidor.');
     } catch (err) {
       console.error('Error loading schedule:', err);
-      loadLocalOrMockData();
+      if (OFFLINE_DEMO_ENABLED) loadLocalOrMockData();
+      else setError(err instanceof Error ? err.message : 'No fue posible cargar el horario desde el servidor.');
     } finally {
       setLoading(false);
     }
@@ -393,6 +430,7 @@ const SchedulerPage: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
+        if (!selectedPeriod) return;
         if (dataStore.isAuthenticated()) {
           console.log('[SchedulerPage] Syncing with remote database...');
           await dataStore.syncWithRemote(selectedPeriod);
@@ -400,8 +438,12 @@ const SchedulerPage: React.FC = () => {
         await loadScheduleData();
       } catch (err) {
         console.error('Error initializing data:', err);
-        setError('Error al cargar datos. Usando modo local.');
-        loadLocalOrMockData();
+        if (OFFLINE_DEMO_ENABLED) {
+          setError('Error al cargar datos. Usando modo demo local.');
+          loadLocalOrMockData();
+        } else {
+          setError(err instanceof Error ? err.message : 'No fue posible cargar los datos del servidor.');
+        }
       } finally {
         refreshRooms();
         setLoading(false);
@@ -596,7 +638,7 @@ const SchedulerPage: React.FC = () => {
         // Success: reload schedule data to stay perfectly in sync with D1 (including conflicts)
         await loadScheduleData();
         addAuditEntry('assign', `Asignado ${section.subject_name} a ${days[dayOfWeek - 1]} ${timeslot.label} (Sec ${parallelIndex}) en ${roomName}`);
-      } else {
+      } else if (OFFLINE_DEMO_ENABLED) {
         // Offline: save to local state and localStorage
         const newAssignment: Assignment = {
           id: `asg-${Date.now()}`,
@@ -621,6 +663,8 @@ const SchedulerPage: React.FC = () => {
         setSections(prev => prev.map(s => s.id === section.id ? { ...s, assigned_slots: s.assigned_slots + 1 } : s));
         setHasChanges(true);
         addAuditEntry('assign', `Asignado ${section.subject_name} a ${days[dayOfWeek - 1]} ${timeslot.label} (Sec ${parallelIndex}) en ${roomName}`);
+      } else {
+        throw new Error('La sesión expiró. Vuelve a iniciar sesión.');
       }
       
       if (section.assigned_slots + 1 >= section.hours_per_week) setSelectedSection(null);
@@ -658,7 +702,7 @@ const SchedulerPage: React.FC = () => {
         // Success: reload schedule data
         await loadScheduleData();
         addAuditEntry('unassign', `Devuelto ${assignment.subject_name} al backlog`);
-      } else {
+      } else if (OFFLINE_DEMO_ENABLED) {
         // Offline: remove from local state and update localStorage
         const updatedAsgs = assignments.filter(a => a.id !== assignmentId);
         setAssignments(updatedAsgs);
@@ -667,6 +711,8 @@ const SchedulerPage: React.FC = () => {
         setSections(prev => prev.map(s => s.id === assignment.section_id ? { ...s, assigned_slots: Math.max(0, s.assigned_slots - 1) } : s));
         setHasChanges(true);
         addAuditEntry('unassign', `Devuelto ${assignment.subject_name} al backlog`);
+      } else {
+        throw new Error('La sesión expiró. Vuelve a iniciar sesión.');
       }
     } catch (err: any) {
       console.error('Unassign failed:', err);
@@ -703,6 +749,10 @@ const SchedulerPage: React.FC = () => {
       }
     }
 
+    if (!OFFLINE_DEMO_ENABLED) {
+      setError('La sesión expiró. Vuelve a iniciar sesión.');
+      return;
+    }
     const updatedAsgs = assignments.map(a => {
       if (a.id === editingAssignment.id) {
         return {
@@ -777,6 +827,7 @@ const SchedulerPage: React.FC = () => {
       try {
         await api.saveSection({
           id,
+          period_id: selectedPeriod,
           subject_id: sectionFormData.subject_id,
           teacher_id: teacher?.id || null,
           nrc: sectionFormData.nrc,
@@ -792,6 +843,10 @@ const SchedulerPage: React.FC = () => {
       }
     }
 
+    if (!OFFLINE_DEMO_ENABLED) {
+      setError('La sesión expiró. Vuelve a iniciar sesión.');
+      return;
+    }
     dataStore.addOrUpdateSection(newSectionData);
     
     // Refresh sections state
@@ -810,6 +865,10 @@ const SchedulerPage: React.FC = () => {
           setError(deleteError instanceof Error ? deleteError.message : 'No fue posible eliminar la sección');
           return;
         }
+      }
+      if (!OFFLINE_DEMO_ENABLED) {
+        setError('La sesión expiró. Vuelve a iniciar sesión.');
+        return;
       }
       dataStore.deleteSection(id);
       
@@ -916,7 +975,22 @@ const SchedulerPage: React.FC = () => {
     return options.sort((a, b) => b.score - a.score).slice(0, 3);
   };
 
-  const suggestSlotForSection = (section: Section) => {
+  const suggestSlotForSection = async (section: Section) => {
+    if (dataStore.getAuthToken()) {
+      try {
+        const [top] = await api.getSlotScores(section.id, selectedPeriod);
+        if (!top) { alert('No hay bloques disponibles'); return; }
+        setSelectedSection(section);
+        alert(`Opción recomendada: ${days[top.day_of_week - 1]} ${top.timeslot_label}, ${top.room_name} (${top.score}%)`);
+      } catch (suggestionError) {
+        setError(suggestionError instanceof Error ? suggestionError.message : 'No fue posible calcular una sugerencia');
+      }
+      return;
+    }
+    if (!OFFLINE_DEMO_ENABLED) {
+      setError('La sesión expiró. Vuelve a iniciar sesión.');
+      return;
+    }
     const best = getBestSlotsForSection(section);
     if (best.length === 0) { alert('No hay slots disponibles'); return; }
     setSelectedSection(section);
@@ -991,7 +1065,41 @@ const SchedulerPage: React.FC = () => {
     return true;
   };
 
-  const autoAssignAll = () => {
+  const autoAssignAll = async () => {
+    if (dataStore.getAuthToken()) {
+      setSaving(true);
+      let count = 0;
+      try {
+        const ordered = [...unassignedSections].sort((a, b) => calculateDifficultyScore(b) - calculateDifficultyScore(a));
+        for (const section of ordered) {
+          const remaining = Math.max(0, section.hours_per_week - section.assigned_slots);
+          for (let index = 0; index < remaining; index++) {
+            const [top] = await api.getSlotScores(section.id, selectedPeriod);
+            if (!top) break;
+            await api.assignSection({
+              section_id: section.id,
+              room_id: top.room_id,
+              timeslot_id: top.timeslot_id,
+              day_of_week: top.day_of_week,
+              period_id: selectedPeriod,
+            });
+            count++;
+          }
+        }
+        await loadScheduleData();
+        alert(`✅ Auto-asignados y sincronizados: ${count} bloques`);
+      } catch (autoError) {
+        await loadScheduleData();
+        setError(autoError instanceof Error ? autoError.message : 'La auto-asignación no pudo completarse');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+    if (!OFFLINE_DEMO_ENABLED) {
+      setError('La sesión expiró. Vuelve a iniciar sesión.');
+      return;
+    }
     let count = 0;
     unassignedSections.filter(s => {
       const best = getBestSlotsForSection(s);
@@ -1072,7 +1180,7 @@ const SchedulerPage: React.FC = () => {
   const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
   const criticalCount = conflicts.filter(c => c.type === 'CRITICAL').length;
   const warningCount = conflicts.filter(c => c.type === 'WARNING').length;
-  const healthPercent = metrics?.health_score || 78;
+  const healthPercent = metrics?.health_score ?? 0;
 
   // Save handler
   const handleSave = async () => {
@@ -1084,12 +1192,14 @@ const SchedulerPage: React.FC = () => {
         await loadScheduleData();
         setHasChanges(false);
         alert('✅ Todos los cambios están sincronizados con la nube (Cloudflare D1).');
-      } else {
+      } else if (OFFLINE_DEMO_ENABLED) {
         // Offline: Explicitly confirm local storage
         localStorage.setItem(`scheduler_assignments_${selectedPeriod}`, JSON.stringify(assignments));
         localStorage.setItem(`scheduler_conflicts_${selectedPeriod}`, JSON.stringify(conflicts));
         setHasChanges(false);
         alert('💾 Horario guardado localmente en el navegador.');
+      } else {
+        throw new Error('La sesión expiró. Vuelve a iniciar sesión.');
       }
     } catch (err) {
       console.error('Error saving:', err);
