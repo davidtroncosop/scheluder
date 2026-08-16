@@ -60,13 +60,14 @@ INSERT INTO subjects (id, career_id, code, name, level, credits) VALUES
 ('sub-anat-001', 'car-kine-001', 'DANA0020', 'Anatomía II', 2, 6);
 
 -- Secciones (NRCs)
-INSERT INTO sections (id, period_id, career_id, subject_id, nrc, section_code, type, expected_students, hours_per_week, teacher_id, priority) VALUES
-('sec-morf-lab', 'per-2026-1', 'car-kine-001', 'sub-morf-001', '23456', 'S1', 'LAB', 25, 4, 'tch-reyes-001', 2),
-('sec-biom-teo', 'per-2026-1', 'car-kine-001', 'sub-biom-001', '23489', 'S1', 'TEO', 40, 2, 'tch-soto-001', 1),
-('sec-fisio-teo', 'per-2026-1', 'car-kine-001', 'sub-fisio-001', '23490', 'S1', 'TEO', 40, 4, 'tch-soto-001', 0),
-('sec-bioe-teo', 'per-2026-1', 'car-kine-001', 'sub-bioe-001', '23491', 'S1', 'TEO', 40, 2, 'tch-reyes-001', 0),
-('sec-salp-teo', 'per-2026-1', 'car-kine-001', 'sub-salp-001', '23492', 'S1', 'TEO', 40, 2, 'tch-valenz-001', 0),
-('sec-anat-teo', 'per-2026-1', 'car-kine-001', 'sub-anat-001', '11202', 'S1', 'TEO', 40, 4, 'tch-rivas-001', 0);
+INSERT INTO sections (id, period_id, career_id, subject_id, nrc, section_code, type, parent_section_id, expected_students, hours_per_week, teacher_id, priority) VALUES
+('sec-morf-teo', 'per-2026-1', 'car-kine-001', 'sub-morf-001', '23455', 'T1', 'TEO', NULL, 50, 2, 'tch-reyes-001', 2),
+('sec-morf-lab', 'per-2026-1', 'car-kine-001', 'sub-morf-001', '23456', 'P1', 'LAB', 'sec-morf-teo', 25, 4, 'tch-reyes-001', 2),
+('sec-biom-teo', 'per-2026-1', 'car-kine-001', 'sub-biom-001', '23489', 'S1', 'TEO', NULL, 40, 2, 'tch-soto-001', 1),
+('sec-fisio-teo', 'per-2026-1', 'car-kine-001', 'sub-fisio-001', '23490', 'S1', 'TEO', NULL, 40, 4, 'tch-soto-001', 0),
+('sec-bioe-teo', 'per-2026-1', 'car-kine-001', 'sub-bioe-001', '23491', 'S1', 'TEO', NULL, 40, 2, 'tch-reyes-001', 0),
+('sec-salp-teo', 'per-2026-1', 'car-kine-001', 'sub-salp-001', '23492', 'S1', 'TEO', NULL, 40, 2, 'tch-valenz-001', 0),
+('sec-anat-teo', 'per-2026-1', 'car-kine-001', 'sub-anat-001', '11202', 'S1', 'TEO', NULL, 40, 4, 'tch-rivas-001', 0);
 
 -- Disponibilidad de docentes (bloqueados algunos horarios)
 INSERT INTO teacher_availability (teacher_id, day_of_week, timeslot_id, status) VALUES

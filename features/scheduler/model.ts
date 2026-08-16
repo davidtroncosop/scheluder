@@ -1,10 +1,13 @@
 export interface SchedulerSection {
   id: string;
+  subject_id: string;
   nrc: string;
   subject_name: string;
   subject_code: string;
   level: number;
   type: string;
+  parent_section_id: string | null;
+  parent_nrc: string | null;
   hours_per_week: number;
   teacher_name: string | null;
   priority: number;

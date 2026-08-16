@@ -16,6 +16,7 @@ import {
   type SchedulerSection as Section,
   type SchedulerTimeslot as Timeslot,
 } from '../features/scheduler/model';
+import { areDirectParentAndChild } from '../features/scheduler/relationships';
 
 export type { SchedulerConflict as Conflict } from '../features/scheduler/model';
 
@@ -50,6 +51,7 @@ const SchedulerPage: React.FC = () => {
     hours_per_week: 2,
     level: 1,
     teacher_name: '',
+    parent_section_id: '',
   });
   const [selectedSection, setSelectedSection] = useState<Section | null>(null);
 
@@ -152,6 +154,8 @@ const SchedulerPage: React.FC = () => {
       compatible = availableRooms.filter(r => r.type === 'SIM' || r.type === 'LAB');
     } else if (type === 'LAB') {
       compatible = availableRooms.filter(r => r.type === 'LAB' || r.type === 'SIM');
+    } else if (type === 'TAL') {
+      compatible = availableRooms.filter(r => r.type === 'TAL');
     } else {
       compatible = availableRooms.filter(r => r.type === 'TEO' || r.type === 'AUD');
     }
@@ -286,11 +290,14 @@ const SchedulerPage: React.FC = () => {
           // Map sections and sync assigned_slots count from database
           const mappedSecs = rawSecs.map((s: any) => ({
             id: s.id,
+            subject_id: s.subject_id,
             nrc: s.nrc,
             subject_name: s.subject_name || s.nombre,
             subject_code: s.subject_code || s.codigo,
             level: s.level,
             type: s.type,
+            parent_section_id: s.parent_section_id || null,
+            parent_nrc: s.parent_nrc || null,
             hours_per_week: s.hours_per_week || s.horas,
             teacher_name: s.teacher_name || s.docente_nombre || null,
             priority: s.priority || 0,
@@ -391,11 +398,14 @@ const SchedulerPage: React.FC = () => {
         const assignedCount = loadedAsgs.filter(a => a.section_id === s.id).length;
         return {
           id: s.id,
+          subject_id: dataStore.getSubjects().find(subject => subject.codigo === s.codigo)?.id || '',
           nrc: s.nrc,
           subject_name: s.nombre,
           subject_code: s.codigo,
           level: s.nivel,
           type: s.tipo,
+          parent_section_id: localSections.find(candidate => candidate.nrc === s.nrc_teorico)?.id || null,
+          parent_nrc: s.nrc_teorico || null,
           hours_per_week: s.horas,
           teacher_name: s.docente_nombre || null,
           priority: s.nivel >= 3 ? 1 : 0,
@@ -405,9 +415,9 @@ const SchedulerPage: React.FC = () => {
       setSections(schedulerSections);
     } else {
       setSections([
-        { id: '1', nrc: '23456', subject_name: 'Morfología – LAB', subject_code: 'DMOR0030', level: 3, type: 'LAB', hours_per_week: 4, teacher_name: 'Prof. Reyes', priority: 2, assigned_slots: 0 },
-        { id: '2', nrc: '23489', subject_name: 'Biomecánica I', subject_code: 'DBIO0031', level: 3, type: 'TEO', hours_per_week: 2, teacher_name: 'Prof. Soto', priority: 1, assigned_slots: 0 },
-        { id: '3', nrc: '11202', subject_name: 'Anatomía II', subject_code: 'DANA0020', level: 2, type: 'TEO', hours_per_week: 4, teacher_name: 'Dra. Rivas', priority: 0, assigned_slots: 4 },
+        { id: '1', subject_id: 'sub-morf', nrc: '23456', subject_name: 'Morfología – LAB', subject_code: 'DMOR0030', level: 3, type: 'LAB', parent_section_id: null, parent_nrc: null, hours_per_week: 4, teacher_name: 'Prof. Reyes', priority: 2, assigned_slots: 0 },
+        { id: '2', subject_id: 'sub-bio', nrc: '23489', subject_name: 'Biomecánica I', subject_code: 'DBIO0031', level: 3, type: 'TEO', parent_section_id: null, parent_nrc: null, hours_per_week: 2, teacher_name: 'Prof. Soto', priority: 1, assigned_slots: 0 },
+        { id: '3', subject_id: 'sub-ana', nrc: '11202', subject_name: 'Anatomía II', subject_code: 'DANA0020', level: 2, type: 'TEO', parent_section_id: null, parent_nrc: null, hours_per_week: 4, teacher_name: 'Dra. Rivas', priority: 0, assigned_slots: 4 },
       ]);
     }
 
@@ -521,6 +531,15 @@ const SchedulerPage: React.FC = () => {
     );
     if (existingInParallel) {
       return { available: false, reason: 'Paralelo ocupado', score: 0 };
+    }
+
+    const parentChildConflict = assignments.find(assignment => {
+      if (assignment.timeslot_id !== timeslotId || assignment.day_of_week !== dayOfWeek) return false;
+      const assignedSection = sections.find(section => section.id === assignment.section_id);
+      return assignedSection ? areDirectParentAndChild(selectedSection, assignedSection) : false;
+    });
+    if (parentChildConflict) {
+      return { available: false, reason: 'Teoría y práctica no pueden coincidir', score: 0 };
     }
 
     // Check for level conflicts (same level, same slot, any parallel) - Optional: allow different parallels for same level?
@@ -782,11 +801,12 @@ const SchedulerPage: React.FC = () => {
       setEditingSection(sec);
       setSectionFormData({
         nrc: sec.nrc,
-        subject_id: matchedSub?.id || '',
+        subject_id: sec.subject_id || matchedSub?.id || '',
         type: sec.type,
         hours_per_week: sec.hours_per_week,
         level: sec.level,
         teacher_name: sec.teacher_name || '',
+        parent_section_id: sec.parent_section_id || '',
       });
     } else {
       setEditingSection(null);
@@ -797,6 +817,7 @@ const SchedulerPage: React.FC = () => {
         hours_per_week: 2,
         level: 1,
         teacher_name: '',
+        parent_section_id: '',
       });
     }
     setIsSectionModalOpen(true);
@@ -806,6 +827,10 @@ const SchedulerPage: React.FC = () => {
     const targetSub = allSubjects.find(s => s.id === sectionFormData.subject_id);
     if (!targetSub || !sectionFormData.nrc.trim()) {
       alert('Por favor seleccione una asignatura e ingrese el NRC.');
+      return;
+    }
+    if (sectionFormData.type !== 'TEO' && !sectionFormData.parent_section_id) {
+      alert('Seleccione la sección teórica padre para esta práctica.');
       return;
     }
 
@@ -820,6 +845,8 @@ const SchedulerPage: React.FC = () => {
       tipo: sectionFormData.type as any,
       docente_nombre: sectionFormData.teacher_name || undefined,
       periodo: selectedPeriod,
+      parent_section_id: sectionFormData.parent_section_id || undefined,
+      nrc_teorico: sections.find(section => section.id === sectionFormData.parent_section_id)?.nrc,
     };
 
     if (dataStore.getAuthToken()) {
@@ -832,6 +859,7 @@ const SchedulerPage: React.FC = () => {
           teacher_id: teacher?.id || null,
           nrc: sectionFormData.nrc,
           type: sectionFormData.type,
+          parent_section_id: sectionFormData.type === 'TEO' ? null : sectionFormData.parent_section_id,
           hours_per_week: Number(sectionFormData.hours_per_week),
         }, Boolean(editingSection));
         await loadScheduleData();
@@ -900,11 +928,14 @@ const SchedulerPage: React.FC = () => {
       const assignedCount = loadedAsgs.filter(a => a.section_id === s.id).length;
       return {
         id: s.id,
+        subject_id: dataStore.getSubjects().find(subject => subject.codigo === s.codigo)?.id || '',
         nrc: s.nrc,
         subject_name: s.nombre,
         subject_code: s.codigo,
         level: s.nivel,
         type: s.tipo,
+        parent_section_id: localSections.find(candidate => candidate.nrc === s.nrc_teorico)?.id || null,
+        parent_nrc: s.nrc_teorico || null,
         hours_per_week: s.horas,
         teacher_name: s.docente_nombre || null,
         priority: s.nivel >= 3 ? 1 : 0,
@@ -947,6 +978,7 @@ const SchedulerPage: React.FC = () => {
     let difficulty = section.hours_per_week * 10;
     if (section.type === 'LAB') difficulty += 30;
     if (section.type === 'SIM') difficulty += 40;
+    if (section.type === 'TAL') difficulty += 30;
     if (section.level >= 4) difficulty += 15;
     return difficulty + (section.priority * 15);
   };
@@ -1583,7 +1615,7 @@ const SchedulerPage: React.FC = () => {
                             onDragStart={(e) => handleDragStart(e, section)}
                             onDragEnd={handleDragEnd}
                             onClick={() => setSelectedSection(selectedSection?.id === section.id ? null : section)}
-                            className={`bg-white dark:bg-slate-800 rounded-xl border p-4 shadow-sm mb-4 relative cursor-grab active:cursor-grabbing transition-all ${selectedSection?.id === section.id
+                            className={`bg-white dark:bg-slate-800 rounded-xl border p-4 shadow-sm mb-4 relative cursor-grab active:cursor-grabbing transition-all ${section.parent_section_id ? 'ml-4 border-l-4 border-l-cyan-400' : ''} ${selectedSection?.id === section.id
                               ? 'border-2 border-primary shadow-lg shadow-primary/5'
                               : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
                               } ${draggingSection?.id === section.id ? 'opacity-50 scale-95' : ''}`}
@@ -1596,6 +1628,12 @@ const SchedulerPage: React.FC = () => {
                             )}
                             <h3 className="text-xs font-black text-slate-900 dark:text-white mb-1">{section.subject_name}</h3>
                             <p className="text-[10px] text-slate-500 font-medium mb-2">NRC {section.nrc} • {section.hours_per_week} HRS</p>
+                            {section.parent_section_id && (
+                              <p className="mb-2 flex items-center gap-1 text-[9px] font-bold text-cyan-700 dark:text-cyan-300">
+                                <span className="material-symbols-outlined text-[12px]">account_tree</span>
+                                Práctica de TEO NRC {section.parent_nrc || 'sin identificar'} · puede coincidir con sus hermanas
+                              </p>
+                            )}
 
                             {/* Difficulty indicator */}
                             {(() => {
@@ -2676,7 +2714,7 @@ const SchedulerPage: React.FC = () => {
                 </label>
                 <select
                   value={sectionFormData.subject_id}
-                  onChange={(e) => setSectionFormData({ ...sectionFormData, subject_id: e.target.value })}
+                  onChange={(e) => setSectionFormData({ ...sectionFormData, subject_id: e.target.value, parent_section_id: '' })}
                   className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
                   required
                 >
@@ -2710,15 +2748,42 @@ const SchedulerPage: React.FC = () => {
                   </label>
                   <select
                     value={sectionFormData.type}
-                    onChange={(e) => setSectionFormData({ ...sectionFormData, type: e.target.value })}
+                    onChange={(e) => setSectionFormData({
+                      ...sectionFormData,
+                      type: e.target.value,
+                      parent_section_id: e.target.value === 'TEO' ? '' : sectionFormData.parent_section_id,
+                    })}
                     className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
                   >
                     <option value="TEO">Teórica (TEO)</option>
                     <option value="LAB">Laboratorio (LAB)</option>
+                    <option value="TAL">Taller (TAL)</option>
                     <option value="SIM">Simulación (SIM)</option>
                   </select>
                 </div>
               </div>
+
+              {sectionFormData.type !== 'TEO' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                    Sección teórica padre
+                  </label>
+                  <select
+                    required
+                    value={sectionFormData.parent_section_id}
+                    onChange={(e) => setSectionFormData({ ...sectionFormData, parent_section_id: e.target.value })}
+                    className="w-full rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50/50 dark:bg-cyan-950/20 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
+                  >
+                    <option value="">Seleccione el NRC teórico</option>
+                    {sections
+                      .filter(section => section.type === 'TEO' && section.subject_id === sectionFormData.subject_id && section.id !== editingSection?.id)
+                      .map(section => (
+                        <option key={section.id} value={section.id}>NRC {section.nrc} · {section.subject_name}</option>
+                      ))}
+                  </select>
+                  <p className="mt-1.5 text-[10px] text-slate-500">Las prácticas hermanas pueden compartir horario; esta práctica nunca podrá coincidir con su teoría.</p>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

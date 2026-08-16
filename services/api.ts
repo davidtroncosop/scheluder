@@ -235,7 +235,7 @@ class SchedulerAPI {
         return this.request<SectionWithDetails[]>(`/sections?${params.toString()}`);
     }
 
-    async importSchedule(data: Array<Record<string, string>>, periodId: string, careerId: string, importMode: 'replace' | 'merge'): Promise<{ success: boolean; inserted: number; message: string; errors: string[] }> {
+    async importSchedule(data: Array<Record<string, string>>, periodId: string, careerId: string, importMode: 'replace' | 'merge'): Promise<{ success: boolean; inserted: number; linked: number; message: string; errors: string[] }> {
         return this.request('/import/horarios', {
             method: 'POST',
             body: JSON.stringify({ data, period_id: periodId, career_id: careerId, import_mode: importMode }),

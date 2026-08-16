@@ -20,6 +20,23 @@ describe('assisted planner workflow', () => {
     expect(result.errors[0]).toContain('horas');
   });
 
+  it('requires a theoretical NRC for practical sections', () => {
+    const result = validateScheduleImport(
+      ['nrc', 'codigo', 'nombre', 'nivel', 'horas', 'tipo', 'nrc_teorico'],
+      [{ nrc: '10002', codigo: 'MOR101', nombre: 'Morfología LAB', nivel: '1', horas: '2', tipo: 'LAB', nrc_teorico: '' }],
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors[0]).toContain('nrc_teorico');
+  });
+
+  it('accepts a practical section linked to its theory', () => {
+    const result = validateScheduleImport(
+      ['nrc', 'codigo', 'nombre', 'nivel', 'horas', 'tipo', 'nrc_teorico'],
+      [{ nrc: '10002', codigo: 'MOR101', nombre: 'Morfología LAB', nivel: '1', horas: '2', tipo: 'LAB', nrc_teorico: '10001' }],
+    );
+    expect(result.valid).toBe(true);
+  });
+
   it('builds one queue item for every unassigned weekly block', () => {
     expect(buildAssignmentQueue([
       { id: 'a', hours_per_week: 3, assigned_slots: 1 },

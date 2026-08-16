@@ -1,6 +1,6 @@
 # Matriz UAT / QA — Scheduler Pro
 
-Fecha de ejecución: 2026-08-15
+Fecha de ejecución: 2026-08-16
 Entorno: producción (`https://scheduler-pro.pages.dev`)
 Rol probado: administrador autenticado
 Datos base: 26 secciones, 4 asignaciones, 0 conflictos críticos activos.
@@ -28,6 +28,9 @@ Datos base: 26 secciones, 4 asignaciones, 0 conflictos críticos activos.
 | CATALOG-04 | Bloques | Consultar bloques horarios | Devuelve bloques ordenados | 8 bloques | PASS |
 | SECTION-01 | Secciones | Consultar secciones por período | Solo muestra el período solicitado | 26 en 2026-1 | PASS |
 | SECTION-02 | Secciones | Validar aislamiento carrera/período | No mezcla datos de otras carreras/períodos | Sin mezcla observada | PASS |
+| SECTION-03 | Secciones padre/hija | Vincular LAB/TAL/SIM mediante `nrc_teorico` | Guarda padre de la misma asignatura, carrera y período | Migración y prueba automatizada aprobadas | PASS |
+| SECTION-04 | Secciones padre/hija | Programar dos prácticas hermanas en paralelo | Permite mismo día/bloque con salas y docentes distintos | Prueba SQL aislada aprobada | PASS |
+| SECTION-05 | Secciones padre/hija | Programar teoría y práctica en paralelo | Rechaza con `PARENT_CHILD_OVERLAP` | Regla del motor y prueba de regresión aprobadas | PASS |
 | IMPORT-01 | Importación | Importar NRC con carrera y período | Crea/actualiza dentro del alcance | PASS en prueba controlada | PASS |
 | IMPORT-02 | Importación | Reemplazar archivo | Solo elimina carrera + período seleccionados | PASS en prueba controlada | PASS |
 | ASSIST-01 | Modo asistido | Validar CSV con columnas requeridas | Archivo aceptado y filas contabilizadas | Prueba automatizada aprobada | PASS |
@@ -59,6 +62,8 @@ La búsqueda de alternativas fue optimizada para cargar el contexto una sola vez
 ## Estado final de datos
 
 - Secciones 2026-1 / Kinesiología: 26.
+- Prácticas vinculadas a una teoría: 12; prácticas huérfanas: 0.
+- Relaciones padre-hija inválidas: 0; solapamientos padre-hija existentes: 0.
 - Asignaciones totales: 4.
 - Conflictos críticos activos: 0.
 - Registros de prueba sobrantes: 0.

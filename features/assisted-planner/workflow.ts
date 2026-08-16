@@ -37,6 +37,8 @@ export const validateScheduleImport = (
   if (!rows.length) errors.push('El archivo no contiene registros para importar');
 
   if (!missing.length) {
+    const typeHeader = normalizedHeaders.find(header => header.normalized === 'tipo')?.original;
+    const parentHeader = normalizedHeaders.find(header => ['nrc_teorico', 'nrc_padre'].includes(header.normalized))?.original;
     rows.forEach((row, index) => {
       for (const required of REQUIRED_SCHEDULE_FIELDS) {
         if (!String(row[matchedHeaders[required]] || '').trim()) {
@@ -50,6 +52,10 @@ export const validateScheduleImport = (
       const level = Number(row[matchedHeaders.nivel]);
       if (!Number.isInteger(level) || level < 1 || level > 12) {
         errors.push(`Fila ${index + 2}: nivel debe ser un entero entre 1 y 12`);
+      }
+      const type = String(typeHeader ? row[typeHeader] : 'TEO').trim().toUpperCase();
+      if (type !== 'TEO' && !String(parentHeader ? row[parentHeader] : '').trim()) {
+        errors.push(`Fila ${index + 2}: las secciones ${type || 'prácticas'} requieren nrc_teorico`);
       }
     });
   }

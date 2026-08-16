@@ -9,6 +9,11 @@ import {
 } from '../../features/ai/mapping';
 import type { MappingField } from '../../types';
 import { hashPassword, safeSecretEquals, signJwt, verifyJwt, verifyPassword } from '../../features/auth/security';
+import {
+    areDirectParentAndChild,
+    shouldApplyLevelClash,
+    type SectionRelationshipIdentity,
+} from '../../features/scheduler/relationships';
 
 const DUMMY_PASSWORD_HASH = 'pbkdf2-sha256$100000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
@@ -933,6 +938,8 @@ app.get('/sections', authMiddleware, async (c) => {
       sub.career_id,
       t.name as teacher_name,
       t.rut as teacher_rut,
+      parent.nrc as parent_nrc,
+      parent_subject.name as parent_subject_name,
       (
         SELECT COUNT(*) FROM schedule_assignments sa
         WHERE sa.section_id = s.id
@@ -941,6 +948,8 @@ app.get('/sections', authMiddleware, async (c) => {
     FROM sections s
     JOIN subjects sub ON sub.id = s.subject_id
     LEFT JOIN teachers t ON t.id = s.teacher_id
+    LEFT JOIN sections parent ON parent.id = s.parent_section_id
+    LEFT JOIN subjects parent_subject ON parent_subject.id = parent.subject_id
     `;
     const params: any[] = [periodId, periodId];
     query += ' WHERE s.period_id = COALESCE(?, (SELECT id FROM periods WHERE is_active = 1 LIMIT 1))';
@@ -952,7 +961,8 @@ app.get('/sections', authMiddleware, async (c) => {
         query += ' AND s.career_id = ?';
         params.push(requestedCareerId);
     }
-    query += ' ORDER BY s.priority DESC, sub.level, sub.name';
+    query += ` ORDER BY s.priority DESC, sub.level, sub.name,
+        COALESCE(parent.nrc, s.nrc), CASE WHEN s.parent_section_id IS NULL THEN 0 ELSE 1 END, s.section_code, s.nrc`;
 
     const sections = await db.prepare(query).bind(...params).all();
 
@@ -977,18 +987,31 @@ app.post('/sections', authMiddleware, async (c) => {
     if (!subject) return c.json({ error: 'Asignatura no encontrada' }, 404);
     if (!canAccessCareer(user, subject.career_id)) return c.json({ error: 'No autorizado' }, 403);
     const id = `sec-${crypto.randomUUID()}`;
+    const sectionType = normalizeSectionType(body.type);
+    const parentSectionId = sectionType === 'TEO' ? null : String(body.parent_section_id || '') || null;
+    const parentError = await validateParentSelection(c.env.DB, {
+        sectionId: id,
+        parentSectionId,
+        type: sectionType,
+        subjectId: String(body.subject_id),
+        careerId: subject.career_id,
+        periodId,
+    });
+    if (parentError) return c.json({ error: parentError }, 400);
     if (body.teacher_id) {
         const teacher = await c.env.DB.prepare('SELECT career_id FROM teachers WHERE id = ? AND is_active = 1')
             .bind(body.teacher_id).first<{ career_id: string }>();
         if (!teacher || teacher.career_id !== subject.career_id) return c.json({ error: 'Docente no válido para la carrera' }, 400);
     }
     try {
-        await c.env.DB.prepare(`INSERT INTO sections (id, period_id, career_id, subject_id, teacher_id, nrc, type, hours_per_week, expected_students, priority)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-            .bind(id, periodId, subject.career_id, body.subject_id, body.teacher_id || null, body.nrc, body.type || 'TEO', Number(body.hours_per_week || 2), Number(body.expected_students || 30), Number(body.priority || 0)).run();
+        await c.env.DB.prepare(`INSERT INTO sections (id, period_id, career_id, subject_id, teacher_id, nrc, section_code, type, parent_section_id, hours_per_week, expected_students, priority)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+            .bind(id, periodId, subject.career_id, body.subject_id, body.teacher_id || null, body.nrc,
+                body.section_code || null, sectionType, parentSectionId, Number(body.hours_per_week || 2),
+                Number(body.expected_students || 30), Number(body.priority || 0)).run();
     } catch (error) {
         if (String(error).toLowerCase().includes('unique')) return c.json({ error: 'El NRC ya existe para esta carrera y período' }, 409);
-        throw error;
+        return c.json({ error: sectionRelationshipError(error) }, 409);
     }
     return c.json({ id }, 201);
 });
@@ -996,7 +1019,9 @@ app.post('/sections', authMiddleware, async (c) => {
 app.put('/sections/:id', authMiddleware, async (c) => {
     const user = c.get('user') as UserPayload;
     const id = c.req.param('id');
-    const current = await c.env.DB.prepare('SELECT career_id FROM sections WHERE id = ?').bind(id).first<{ career_id: string }>();
+    const current = await c.env.DB.prepare('SELECT career_id, period_id, subject_id, type, parent_section_id FROM sections WHERE id = ?').bind(id).first<{
+        career_id: string; period_id: string; subject_id: string; type: SectionType; parent_section_id: string | null;
+    }>();
     if (!current) return c.json({ error: 'Sección no encontrada' }, 404);
     if (!canMutate(user) || !canAccessCareer(user, current.career_id)) return c.json({ error: 'No autorizado' }, 403);
     const body = await c.req.json<Record<string, unknown>>();
@@ -1007,8 +1032,32 @@ app.put('/sections/:id', authMiddleware, async (c) => {
             .bind(body.teacher_id).first<{ career_id: string }>();
         if (!teacher || teacher.career_id !== current.career_id) return c.json({ error: 'Docente no válido para la carrera' }, 400);
     }
-    await c.env.DB.prepare(`UPDATE sections SET subject_id = ?, teacher_id = ?, nrc = ?, type = ?, hours_per_week = ?, updated_at = datetime('now') WHERE id = ?`)
-        .bind(body.subject_id, body.teacher_id || null, body.nrc, body.type || 'TEO', Number(body.hours_per_week || 2), id).run();
+    const sectionType = normalizeSectionType(body.type);
+    const childCount = await c.env.DB.prepare('SELECT COUNT(*) AS total FROM sections WHERE parent_section_id = ?').bind(id).first<{ total: number }>();
+    if ((childCount?.total || 0) > 0 && (sectionType !== 'TEO' || String(body.subject_id) !== current.subject_id)) {
+        return c.json({ error: 'No se puede cambiar el tipo o la asignatura de una teoría que tiene prácticas asociadas' }, 409);
+    }
+    const requestedParent = Object.prototype.hasOwnProperty.call(body, 'parent_section_id')
+        ? (String(body.parent_section_id || '') || null)
+        : current.parent_section_id;
+    const parentSectionId = sectionType === 'TEO' ? null : requestedParent;
+    const parentError = await validateParentSelection(c.env.DB, {
+        sectionId: id,
+        parentSectionId,
+        type: sectionType,
+        subjectId: String(body.subject_id),
+        careerId: current.career_id,
+        periodId: current.period_id,
+    });
+    if (parentError) return c.json({ error: parentError }, 400);
+    try {
+        await c.env.DB.prepare(`UPDATE sections SET subject_id = ?, teacher_id = ?, nrc = ?, section_code = ?, type = ?,
+            parent_section_id = ?, hours_per_week = ?, updated_at = datetime('now') WHERE id = ?`)
+            .bind(body.subject_id, body.teacher_id || null, body.nrc, body.section_code || null, sectionType,
+                parentSectionId, Number(body.hours_per_week || 2), id).run();
+    } catch (error) {
+        return c.json({ error: sectionRelationshipError(error) }, 409);
+    }
     return c.json({ success: true });
 });
 
@@ -1038,6 +1087,8 @@ app.delete('/sections/:id', authMiddleware, async (c) => {
     const current = await c.env.DB.prepare('SELECT career_id FROM sections WHERE id = ?').bind(id).first<{ career_id: string }>();
     if (!current) return c.json({ error: 'Sección no encontrada' }, 404);
     if (!canMutate(user) || !canAccessCareer(user, current.career_id)) return c.json({ error: 'No autorizado' }, 403);
+    const children = await c.env.DB.prepare('SELECT COUNT(*) AS total FROM sections WHERE parent_section_id = ?').bind(id).first<{ total: number }>();
+    if ((children?.total || 0) > 0) return c.json({ error: 'No se puede eliminar una sección teórica que todavía tiene prácticas asociadas' }, 409);
     await c.env.DB.prepare('DELETE FROM sections WHERE id = ?').bind(id).run();
     return c.json({ success: true });
 });
@@ -1288,6 +1339,16 @@ app.post('/schedule/assign', authMiddleware, async (c) => {
         return c.json({ id, warnings: conflicts.filter(c => c.type === 'WARNING') }, 201);
     } catch (error) {
         console.error('Assign error:', error);
+        if (String(error).includes('PARENT_CHILD_SCHEDULE_OVERLAP')) {
+            return c.json({
+                error: 'Conflictos críticos detectados',
+                conflicts: [{
+                    type: 'CRITICAL',
+                    rule_code: 'PARENT_CHILD_OVERLAP',
+                    description: 'La teoría y su práctica asociada no pueden programarse en el mismo horario',
+                }],
+            }, 409);
+        }
         return c.json({ error: 'Error al asignar' }, 500);
     }
 });
@@ -1355,8 +1416,15 @@ app.put('/schedule/:id', authMiddleware, async (c) => {
     const critical = conflicts.filter(conflict => conflict.type === 'CRITICAL');
     if (critical.length > 0) return c.json({ error: 'Conflictos críticos detectados', conflicts: critical }, 409);
 
-    await c.env.DB.prepare(`UPDATE schedule_assignments SET room_id = ?, timeslot_id = ?, day_of_week = ?,
-        is_published = 0, updated_at = datetime('now') WHERE id = ?`).bind(roomId, timeslotId, dayOfWeek, id).run();
+    try {
+        await c.env.DB.prepare(`UPDATE schedule_assignments SET room_id = ?, timeslot_id = ?, day_of_week = ?,
+            is_published = 0, updated_at = datetime('now') WHERE id = ?`).bind(roomId, timeslotId, dayOfWeek, id).run();
+    } catch (error) {
+        if (String(error).includes('PARENT_CHILD_SCHEDULE_OVERLAP')) {
+            return c.json({ error: 'La teoría y su práctica asociada no pueden programarse en el mismo horario' }, 409);
+        }
+        throw error;
+    }
     await saveScheduleStatus(c.env.DB, assignment.career_id, assignment.period_id, 'draft', user.id);
     if ('teacher_id' in body) await c.env.DB.prepare("UPDATE sections SET teacher_id = ?, updated_at = datetime('now') WHERE id = ?").bind(teacherId, assignment.section_id).run();
     await c.env.DB.prepare('UPDATE conflicts SET is_resolved = 1, resolved_at = datetime(\'now\') WHERE assignment_id = ? AND is_resolved = 0').bind(id).run();
@@ -1408,7 +1476,7 @@ app.get('/schedule/score', authMiddleware, async (c) => {
     // Prefetch the scheduling state once. The previous implementation queried D1
     // several times for every day × block × room combination.
     const assignments = await db.prepare(`SELECT sa.room_id, sa.timeslot_id, sa.day_of_week,
-        sec.teacher_id, sub.level, sub.career_id
+        sec.id AS section_id, sec.parent_section_id, sec.teacher_id, sub.level, sub.career_id
         FROM schedule_assignments sa
         JOIN sections sec ON sec.id = sa.section_id AND sec.period_id = sa.period_id
         JOIN subjects sub ON sub.id = sec.subject_id
@@ -1417,9 +1485,17 @@ app.get('/schedule/score', authMiddleware, async (c) => {
         ? await db.prepare(`SELECT timeslot_id, day_of_week, status FROM teacher_availability WHERE teacher_id = ?`).bind(section.teacher_id).all()
         : { results: [] } as any;
     const rows = assignments.results as any[];
+    const targetRelationship: SectionRelationshipIdentity = { id: section.id, parent_section_id: section.parent_section_id };
     const roomBusy = new Set(rows.map(row => `${row.room_id}:${row.timeslot_id}:${row.day_of_week}`));
     const teacherBusy = new Set(rows.filter(row => row.teacher_id === section.teacher_id).map(row => `${row.timeslot_id}:${row.day_of_week}`));
-    const levelBusy = new Set(rows.filter(row => row.level === section.level && row.career_id === section.career_id).map(row => `${row.timeslot_id}:${row.day_of_week}`));
+    const parentChildBusy = new Set(rows
+        .filter(row => areDirectParentAndChild(targetRelationship, { id: row.section_id, parent_section_id: row.parent_section_id }))
+        .map(row => `${row.timeslot_id}:${row.day_of_week}`));
+    const levelBusy = new Set(rows.filter(row => (
+        row.level === section.level &&
+        row.career_id === section.career_id &&
+        shouldApplyLevelClash(targetRelationship, { id: row.section_id, parent_section_id: row.parent_section_id })
+    )).map(row => `${row.timeslot_id}:${row.day_of_week}`));
     const blocked = new Set((availability.results as any[]).filter(row => row.status === 'blocked').map(row => `${row.timeslot_id}:${row.day_of_week}`));
     const preferred = new Set((availability.results as any[]).filter(row => row.status === 'preference').map(row => `${row.timeslot_id}:${row.day_of_week}`));
     const orderById = new Map((timeslots.results as any[]).map(row => [row.id, row.order_index]));
@@ -1429,7 +1505,7 @@ app.get('/schedule/score', authMiddleware, async (c) => {
         for (let day = 1; day <= 5; day++) {
             const slotKey = `${ts.id}:${day}`;
             for (const room of rooms.results as any[]) {
-                if (roomBusy.has(`${room.id}:${slotKey}`) || teacherBusy.has(slotKey) || blocked.has(slotKey)) continue;
+                if (roomBusy.has(`${room.id}:${slotKey}`) || teacherBusy.has(slotKey) || blocked.has(slotKey) || parentChildBusy.has(slotKey)) continue;
                 let score = 100;
                 const breakdown: Array<{ rule: string; points: number }> = [];
                 if (section.type === room.type) { score += 30; breakdown.push({ rule: 'Tipo de sala coincide', points: 30 }); }
@@ -1789,52 +1865,154 @@ app.post('/import/horarios', authMiddleware, async (c) => {
     const period = await db.prepare('SELECT id FROM periods WHERE id = ?').bind(period_id).first();
     if (!period) return c.json({ error: 'Período académico inválido' }, 400);
 
-    // Group by NRC to create sections
-    const nrcGroups: Record<string, any[]> = {};
-    for (const row of data) {
-        const nrc = row['NRC'] || row['nrc'] || '';
-        if (!nrcGroups[nrc]) nrcGroups[nrc] = [];
-        nrcGroups[nrc].push(row);
+    const nrcGroups = new Map<string, Record<string, string>[]>();
+    for (const row of data as Record<string, string>[]) {
+        const nrc = String(row.NRC || row.nrc || '').trim();
+        if (!nrc) return c.json({ error: 'Todas las secciones deben tener NRC' }, 400);
+        const rows = nrcGroups.get(nrc) || [];
+        rows.push(row);
+        nrcGroups.set(nrc, rows);
     }
 
-    const [subjectRows, teacherRows] = await Promise.all([
+    const [subjectRows, teacherRows, existingSectionRows, existingAssignmentRows] = await Promise.all([
         db.prepare('SELECT id, code FROM subjects WHERE career_id = ?').bind(targetCareerId).all(),
         db.prepare('SELECT id, rut FROM teachers WHERE career_id = ?').bind(targetCareerId).all(),
+        db.prepare(`SELECT s.id, s.nrc, s.type, s.subject_id, sub.code AS subject_code,
+                (SELECT COUNT(*) FROM sections child WHERE child.parent_section_id = s.id) AS child_count
+            FROM sections s JOIN subjects sub ON sub.id = s.subject_id
+            WHERE s.career_id = ? AND s.period_id = ?`).bind(targetCareerId, period_id).all(),
+        db.prepare(`SELECT section_id, timeslot_id, day_of_week FROM schedule_assignments
+            WHERE career_id = ? AND period_id = ?`).bind(targetCareerId, period_id).all(),
     ]);
 
-    const subjectIds = new Map((subjectRows.results as any[]).map(row => [row.code, row.id]));
+    const subjectIds = new Map((subjectRows.results as any[]).map(row => [String(row.code).trim().toUpperCase(), row.id as string]));
     const teacherIds = new Map((teacherRows.results as any[]).map(row => [row.rut, row.id]));
+    const existingSections = new Map((existingSectionRows.results as any[]).map(row => [String(row.nrc), row]));
+    const assignedSlotsBySection = new Map<string, Set<string>>();
+    for (const assignment of existingAssignmentRows.results as any[]) {
+        const slots = assignedSlotsBySection.get(String(assignment.section_id)) || new Set<string>();
+        slots.add(`${assignment.timeslot_id}|${assignment.day_of_week}`);
+        assignedSlotsBySection.set(String(assignment.section_id), slots);
+    }
     const statements: D1PreparedStatement[] = [];
-    for (const [nrc, rows] of Object.entries(nrcGroups)) {
+
+    type PreparedSection = {
+        id: string;
+        nrc: string;
+        type: SectionType;
+        subjectId: string;
+        subjectCode: string;
+        parentNrc: string | null;
+        row: Record<string, string>;
+    };
+    const preparedSections: PreparedSection[] = [];
+
+    for (const [nrc, rows] of nrcGroups) {
         const firstRow = rows[0];
-        const subjectCode = firstRow.Codigo || firstRow.codigo || '';
+        const subjectCode = String(firstRow.Codigo || firstRow.codigo || '').trim().toUpperCase();
+        if (!subjectCode) return c.json({ error: `La sección NRC ${nrc} no tiene código de asignatura` }, 400);
         let subjectId = subjectIds.get(subjectCode);
         if (!subjectId) {
             subjectId = `sub-${crypto.randomUUID().slice(0, 8)}`;
             subjectIds.set(subjectCode, subjectId);
             statements.push(db.prepare('INSERT INTO subjects (id, career_id, code, name, level, credits) VALUES (?, ?, ?, ?, ?, 4)')
-                .bind(subjectId, targetCareerId, subjectCode, firstRow.Asignatura || firstRow.asignatura || '', parseInt(firstRow.Nivel || firstRow.nivel || '1')));
+                .bind(subjectId, targetCareerId, subjectCode,
+                    firstRow.Asignatura || firstRow.asignatura || firstRow.Nombre || firstRow.nombre || '',
+                    parseInt(firstRow.Nivel || firstRow.nivel || '1')));
         }
+        const type = normalizeSectionType(firstRow.Tipo || firstRow.tipo);
+        const parentNrc = String(firstRow.nrc_teorico || firstRow.NRC_Teorico || firstRow['NRC Teorico'] || firstRow.nrc_padre || '').trim() || null;
+        const existing = existingSections.get(nrc);
+        if (existing && Number(existing.child_count || 0) > 0 && (
+            type !== 'TEO' || String(existing.subject_code).trim().toUpperCase() !== subjectCode
+        )) {
+            return c.json({ error: `No se puede cambiar el tipo o la asignatura del NRC teórico ${nrc} porque tiene prácticas asociadas` }, 409);
+        }
+        preparedSections.push({
+            id: import_mode === 'replace' ? `sec-${crypto.randomUUID().slice(0, 8)}` : existing?.id || `sec-${crypto.randomUUID().slice(0, 8)}`,
+            nrc,
+            type,
+            subjectId,
+            subjectCode,
+            parentNrc,
+            row: firstRow,
+        });
+    }
+
+    const availableSections = new Map<string, { id: string; type: SectionType; subjectCode: string }>();
+    if (import_mode !== 'replace') {
+        for (const row of existingSectionRows.results as any[]) {
+            availableSections.set(String(row.nrc), {
+                id: String(row.id),
+                type: normalizeSectionType(row.type),
+                subjectCode: String(row.subject_code).trim().toUpperCase(),
+            });
+        }
+    }
+    for (const section of preparedSections) {
+        availableSections.set(section.nrc, { id: section.id, type: section.type, subjectCode: section.subjectCode });
+    }
+
+    for (const section of preparedSections) {
+        if (section.type === 'TEO' && section.parentNrc) {
+            return c.json({ error: `La sección teórica NRC ${section.nrc} no puede tener NRC teórico padre` }, 400);
+        }
+        if (section.type !== 'TEO' && !section.parentNrc) {
+            return c.json({ error: `La práctica NRC ${section.nrc} requiere la columna nrc_teorico` }, 400);
+        }
+        if (!section.parentNrc) continue;
+        if (section.parentNrc === section.nrc) return c.json({ error: `La sección NRC ${section.nrc} no puede ser su propio padre` }, 400);
+        const parent = availableSections.get(section.parentNrc);
+        if (!parent) return c.json({ error: `No existe la sección teórica NRC ${section.parentNrc} indicada por la práctica NRC ${section.nrc}` }, 400);
+        if (parent.type !== 'TEO') return c.json({ error: `El NRC padre ${section.parentNrc} debe ser de tipo TEO` }, 400);
+        if (parent.subjectCode !== section.subjectCode) {
+            return c.json({ error: `La práctica NRC ${section.nrc} y su teoría NRC ${section.parentNrc} deben pertenecer a la misma asignatura` }, 400);
+        }
+        if (import_mode !== 'replace') {
+            const childSlots = assignedSlotsBySection.get(section.id) || new Set<string>();
+            const parentSlots = assignedSlotsBySection.get(parent.id) || new Set<string>();
+            if ([...childSlots].some(slot => parentSlots.has(slot))) {
+                return c.json({ error: `No se puede vincular la práctica NRC ${section.nrc}: ya coincide en horario con la teoría NRC ${section.parentNrc}` }, 409);
+            }
+        }
+    }
+
+    preparedSections.sort((first, second) => Number(first.type !== 'TEO') - Number(second.type !== 'TEO'));
+    for (const section of preparedSections) {
+        const firstRow = section.row;
         const teacherId = teacherIds.get(firstRow['RUT Docente'] || firstRow.rut_docente || '') || null;
-        statements.push(db.prepare(`INSERT INTO sections (id, period_id, career_id, subject_id, teacher_id, nrc, type, hours_per_week, expected_students, priority)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        const parentSectionId = section.parentNrc ? availableSections.get(section.parentNrc)!.id : null;
+        const sectionCode = String(firstRow.Seccion || firstRow.seccion || '').trim() || null;
+        statements.push(db.prepare(`INSERT INTO sections (id, period_id, career_id, subject_id, teacher_id, nrc, section_code, type, parent_section_id, hours_per_week, expected_students, priority)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             ON CONFLICT(period_id, career_id, nrc) DO UPDATE SET subject_id = excluded.subject_id, teacher_id = excluded.teacher_id,
-            type = excluded.type, hours_per_week = excluded.hours_per_week, expected_students = excluded.expected_students,
+            section_code = excluded.section_code, type = excluded.type, parent_section_id = excluded.parent_section_id,
+            hours_per_week = excluded.hours_per_week, expected_students = excluded.expected_students,
             updated_at = datetime('now')`)
-            .bind(`sec-${crypto.randomUUID().slice(0, 8)}`, period_id, targetCareerId, subjectId, teacherId, nrc, firstRow.Tipo || firstRow.tipo || 'TEO',
-                parseInt(firstRow.Horas || firstRow.horas || '2'), parseInt(firstRow.Estudiantes || firstRow.estudiantes || '30')));
+            .bind(section.id, period_id, targetCareerId, section.subjectId, teacherId, section.nrc, sectionCode,
+                section.type, parentSectionId, parseInt(firstRow.Horas || firstRow.horas || '2'),
+                parseInt(firstRow.Estudiantes || firstRow.estudiantes || '30')));
     }
     try {
         // Replace only the selected career/period scope. Deleting sections also
         // removes their stale schedule assignments through the FK cascade.
         if (import_mode === 'replace') {
-            statements.unshift(db.prepare('DELETE FROM sections WHERE period_id = ? AND career_id = ?')
-                .bind(period_id, targetCareerId));
+            statements.unshift(
+                db.prepare('DELETE FROM sections WHERE period_id = ? AND career_id = ? AND parent_section_id IS NOT NULL').bind(period_id, targetCareerId),
+                db.prepare('DELETE FROM sections WHERE period_id = ? AND career_id = ?').bind(period_id, targetCareerId),
+            );
         }
         await db.batch(statements);
-        return c.json({ success: true, inserted: Object.keys(nrcGroups).length, errors: [], message: `${Object.keys(nrcGroups).length} secciones procesadas` });
+        const linked = preparedSections.filter(section => section.parentNrc).length;
+        return c.json({
+            success: true,
+            inserted: nrcGroups.size,
+            linked,
+            errors: [],
+            message: `${nrcGroups.size} secciones procesadas; ${linked} prácticas vinculadas a su teoría`,
+        });
     } catch (error) {
-        return c.json({ error: 'La importación fue revertida', details: error instanceof Error ? error.message : String(error) }, 400);
+        return c.json({ error: sectionRelationshipError(error), details: error instanceof Error ? error.message : String(error) }, 400);
     }
 });
 
@@ -2011,6 +2189,55 @@ function isTime(value?: string): value is string {
     return Boolean(value && /^([01]\d|2[0-3]):[0-5]\d$/.test(value));
 }
 
+type SectionType = 'TEO' | 'LAB' | 'TAL' | 'SIM';
+
+function normalizeSectionType(value: unknown): SectionType {
+    const normalized = String(value || 'TEO').trim().toUpperCase();
+    return ['TEO', 'LAB', 'TAL', 'SIM'].includes(normalized) ? normalized as SectionType : 'TEO';
+}
+
+function sectionRelationshipError(error: unknown): string {
+    const message = String(error);
+    if (message.includes('PRACTICE_REQUIRES_PARENT')) return 'Las secciones prácticas requieren una sección teórica padre';
+    if (message.includes('THEORY_CANNOT_HAVE_PARENT')) return 'Una sección teórica no puede depender de otra sección';
+    if (message.includes('SECTION_CANNOT_PARENT_ITSELF')) return 'Una sección no puede ser su propio padre';
+    if (message.includes('PARENT_CHILD_SCHEDULE_OVERLAP')) return 'La teoría y su práctica ya están programadas en el mismo horario';
+    if (message.includes('PARENT_UPDATE_INVALIDATES_CHILDREN')) return 'El cambio dejaría prácticas asociadas inválidas';
+    if (message.includes('INVALID_PARENT_SECTION')) return 'La sección padre debe ser teórica y pertenecer a la misma asignatura, carrera y período';
+    return 'No fue posible guardar la relación entre secciones';
+}
+
+async function validateParentSelection(db: D1Database, params: {
+    sectionId: string;
+    parentSectionId: string | null;
+    type: SectionType;
+    subjectId: string;
+    careerId: string;
+    periodId: string;
+}): Promise<string | null> {
+    if (params.type === 'TEO') {
+        return params.parentSectionId ? 'Una sección teórica no puede depender de otra sección' : null;
+    }
+    if (!params.parentSectionId) return 'Selecciona la sección teórica padre para esta práctica';
+    if (params.parentSectionId === params.sectionId) return 'Una sección no puede ser su propio padre';
+
+    const parent = await db.prepare(`SELECT id FROM sections
+        WHERE id = ? AND type = 'TEO' AND subject_id = ? AND career_id = ? AND period_id = ?`)
+        .bind(params.parentSectionId, params.subjectId, params.careerId, params.periodId).first();
+    if (!parent) return 'La sección padre debe ser teórica y pertenecer a la misma asignatura, carrera y período';
+
+    const overlap = await db.prepare(`SELECT 1
+        FROM schedule_assignments child_assignment
+        JOIN schedule_assignments parent_assignment
+          ON parent_assignment.section_id = ?
+         AND parent_assignment.period_id = child_assignment.period_id
+         AND parent_assignment.timeslot_id = child_assignment.timeslot_id
+         AND parent_assignment.day_of_week = child_assignment.day_of_week
+        WHERE child_assignment.section_id = ? LIMIT 1`)
+        .bind(params.parentSectionId, params.sectionId).first();
+    return overlap ? 'La teoría y su práctica ya están programadas en el mismo horario' : null;
+}
+
 // =============================================
 // HELPER FUNCTIONS
 // =============================================
@@ -2066,7 +2293,7 @@ async function findBestAlternative(db: D1Database, assignment: any) {
         db.prepare('SELECT id, label, order_index FROM timeslots ORDER BY order_index').all(),
         db.prepare(`
             SELECT sa.room_id, sa.timeslot_id, sa.day_of_week,
-                   sec.teacher_id, sub.level
+                   sec.id AS section_id, sec.parent_section_id, sec.teacher_id, sub.level
             FROM schedule_assignments sa
             JOIN sections sec ON sec.id = sa.section_id AND sec.period_id = sa.period_id
             JOIN subjects sub ON sub.id = sec.subject_id
@@ -2079,6 +2306,7 @@ async function findBestAlternative(db: D1Database, assignment: any) {
     ]);
 
     const existing = existingResult.results as any[];
+    const targetRelationship: SectionRelationshipIdentity = { id: section.id, parent_section_id: section.parent_section_id };
     const occupiedRooms = new Set(existing.map(row => `${row.room_id}|${row.timeslot_id}|${row.day_of_week}`));
     const occupiedTeachers = new Set(
         existing.filter(row => row.teacher_id === teacherId)
@@ -2087,8 +2315,16 @@ async function findBestAlternative(db: D1Database, assignment: any) {
     const blockedTeacherSlots = new Set(
         (blockedResult.results as any[]).map(row => `${row.timeslot_id}|${row.day_of_week}`),
     );
+    const parentChildSlots = new Set(
+        existing
+            .filter(row => areDirectParentAndChild(targetRelationship, { id: row.section_id, parent_section_id: row.parent_section_id }))
+            .map(row => `${row.timeslot_id}|${row.day_of_week}`),
+    );
     const occupiedLevels = new Set(
-        existing.filter(row => row.level === section.level)
+        existing.filter(row => row.level === section.level && shouldApplyLevelClash(
+            targetRelationship,
+            { id: row.section_id, parent_section_id: row.parent_section_id },
+        ))
             .map(row => `${row.timeslot_id}|${row.day_of_week}`),
     );
     const candidates: any[] = [];
@@ -2099,6 +2335,7 @@ async function findBestAlternative(db: D1Database, assignment: any) {
                 const slotKey = `${timeslot.id}|${day}`;
                 if (occupiedRooms.has(`${room.id}|${slotKey}`)) continue;
                 if (teacherId && (occupiedTeachers.has(slotKey) || blockedTeacherSlots.has(slotKey))) continue;
+                if (parentChildSlots.has(slotKey)) continue;
                 let score = 100;
                 if (room.type === section.type) score += 30;
                 else if (section.type !== 'TEO') score -= 30;
@@ -2189,14 +2426,36 @@ async function validateAssignment(db: D1Database, params: {
         }
     }
 
-    // WARNING: Level clash using section's actual career_id
-    const levelClash = await db.prepare(`
-    SELECT sa.id FROM schedule_assignments sa
+    const simultaneousResult = await db.prepare(`
+    SELECT sa.id, sec.id AS section_id, sec.parent_section_id, sec.nrc, sub.name AS subject_name, sub.level, sub.career_id
+    FROM schedule_assignments sa
     JOIN sections sec ON sec.id = sa.section_id AND sec.period_id = sa.period_id
     JOIN subjects sub ON sub.id = sec.subject_id
-    WHERE sub.level = ? AND sub.career_id = ? AND sa.period_id = ? AND sa.timeslot_id = ? AND sa.day_of_week = ?
+    WHERE sa.period_id = ? AND sa.timeslot_id = ? AND sa.day_of_week = ?
       AND (? IS NULL OR sa.id <> ?)
-  `).bind(section.level, section.career_id, params.period_id, params.timeslot_id, params.day_of_week, excludedId, excludedId).first();
+  `).bind(params.period_id, params.timeslot_id, params.day_of_week, excludedId, excludedId).all();
+    const simultaneous = simultaneousResult.results as any[];
+    const currentRelationship: SectionRelationshipIdentity = { id: section.id, parent_section_id: section.parent_section_id };
+    const parentChildConflict = simultaneous.find(row => areDirectParentAndChild(
+        currentRelationship,
+        { id: row.section_id, parent_section_id: row.parent_section_id },
+    ));
+
+    if (parentChildConflict) {
+        conflicts.push({
+            type: 'CRITICAL',
+            rule_code: 'PARENT_CHILD_OVERLAP',
+            description: `La teoría y la práctica asociada (${parentChildConflict.subject_name}, NRC ${parentChildConflict.nrc}) no pueden programarse en el mismo horario`,
+        });
+    }
+
+    // Sibling practices are different student groups and may run in parallel.
+    // Unrelated sections from the same level keep the ordinary overlap warning.
+    const levelClash = simultaneous.find(row => (
+        row.level === section.level &&
+        row.career_id === section.career_id &&
+        shouldApplyLevelClash(currentRelationship, { id: row.section_id, parent_section_id: row.parent_section_id })
+    ));
 
     if (levelClash) {
         conflicts.push({

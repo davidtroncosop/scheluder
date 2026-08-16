@@ -103,10 +103,13 @@ export interface Subject {
 
 export interface Section {
   id: string;
+  period_id: string;
+  career_id: string;
   subject_id: string;
   nrc: string;
   section_code: string | null;
   type: 'TEO' | 'LAB' | 'TAL' | 'SIM';
+  parent_section_id: string | null;
   expected_students: number;
   total_hours_semester: number;
   hours_per_week: number;
@@ -226,6 +229,8 @@ export interface SectionWithDetails extends Section {
   teacher_name: string | null;
   teacher_rut: string | null;
   assigned_slots: number;
+  parent_nrc: string | null;
+  parent_subject_name: string | null;
 }
 
 export interface AssignmentWithDetails extends ScheduleAssignment {

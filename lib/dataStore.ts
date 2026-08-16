@@ -43,11 +43,12 @@ export interface ImportedSection {
     nombre: string;
     nivel: number;
     horas: number;
-    tipo: 'TEO' | 'LAB' | 'SIM';
+    tipo: 'TEO' | 'LAB' | 'SIM' | 'TAL';
     docente_id?: string;
     docente_nombre?: string;
     periodo: string;
     nrc_teorico?: string; // NRC del teórico padre (para LAB/SIM)
+    parent_section_id?: string;
     sala_preferida?: string; // Nombre de sala preferida
     seccion?: number; // Número de sección (ej: LAB Sec 1, LAB Sec 2)
 }
@@ -464,6 +465,7 @@ export const getCompatibleRooms = (section: ImportedSection): ImportedRoom[] => 
         if (section.tipo === 'TEO' && !['TEO', 'AUD'].includes(room.tipo)) return false;
         if (section.tipo === 'LAB' && room.tipo !== 'LAB') return false;
         if (section.tipo === 'SIM' && room.tipo !== 'SIM') return false;
+        if (section.tipo === 'TAL' && room.tipo !== 'TAL') return false;
 
         // Si la sala tiene asignaturas permitidas, verificar
         if (room.asignaturas_permitidas && room.asignaturas_permitidas.length > 0) {

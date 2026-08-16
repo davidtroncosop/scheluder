@@ -27,11 +27,13 @@ El modo demo solo puede activarse en un build de desarrollo. En producción, `DE
 La ruta `/#/assistant` ofrece el flujo recomendado para coordinadores y administradores:
 
 1. Seleccionar carrera y período.
-2. Cargar un CSV con `nrc`, `codigo`, `nombre`, `nivel` y `horas`.
+2. Cargar un CSV con `nrc`, `codigo`, `nombre`, `nivel` y `horas`. Las filas prácticas (`LAB`, `TAL` o `SIM`) incluyen además `nrc_teorico`.
 3. Generar una propuesta automática respetando disponibilidad docente, salas y capacidad.
 4. Revisar excepciones y publicar cuando la cobertura sea completa.
 
 El modo `Agregar y actualizar` conserva el backlog existente. El modo `Reemplazar período` elimina primero las secciones y asignaciones de la carrera/período seleccionados. El planificador tradicional permanece disponible en `/#/scheduler` para ajustes manuales.
+
+Las prácticas se vinculan a una sección teórica padre. Dos prácticas hermanas pueden ejecutarse en paralelo cuando usan docentes y salas distintos; la teoría y cualquiera de sus prácticas nunca pueden compartir día y bloque.
 
 ## Preparación de producción
 

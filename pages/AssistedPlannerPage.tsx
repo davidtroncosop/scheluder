@@ -201,7 +201,10 @@ const AssistedPlannerPage: React.FC = () => {
   };
 
   const downloadTemplate = () => {
-    const content = 'nrc,codigo,nombre,nivel,horas,tipo,rut_docente,estudiantes\n10001,DMOR0030,Morfología,3,2,TEO,12.345.678-9,40';
+    const content = `nrc,codigo,nombre,nivel,horas,tipo,rut_docente,estudiantes,nrc_teorico,seccion
+10001,DMOR0030,Morfología TEO,3,2,TEO,12.345.678-9,50,,T1
+10002,DMOR0030,Morfología LAB grupo 1,3,2,LAB,11.111.111-1,25,10001,P1
+10003,DMOR0030,Morfología LAB grupo 2,3,2,LAB,22.222.222-2,25,10001,P2`;
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
     link.download = 'plantilla_planificacion.csv';
