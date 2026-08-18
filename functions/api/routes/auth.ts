@@ -17,7 +17,7 @@ const registrationAccepted = { message: 'Solicitud recibida. Un administrador de
 
 export const authRoutes = new Hono<HonoEnv>();
 
-authRoutes.post('/login', async (c) => {
+authRoutes.post('/auth/login', async (c) => {
     const { email, password } = await c.req.json<{ email?: string; password?: string }>();
     const db = c.env.DB;
 
@@ -73,7 +73,7 @@ authRoutes.post('/login', async (c) => {
     }
 });
 
-authRoutes.post('/bootstrap', async (c) => {
+authRoutes.post('/auth/bootstrap', async (c) => {
     if (!c.env.BOOTSTRAP_TOKEN || c.env.BOOTSTRAP_TOKEN.length < 24) {
         return c.json({ error: 'Bootstrap no configurado' }, 404);
     }
@@ -103,7 +103,7 @@ authRoutes.post('/bootstrap', async (c) => {
     return c.json({ success: true, id }, 201);
 });
 
-authRoutes.get('/registration-options', async (c) => {
+authRoutes.get('/auth/registration-options', async (c) => {
     const clientIp = c.req.header('CF-Connecting-IP') || 'unknown';
     if (!await allowRequest(c.env.DB, `registration-options:${clientIp}`, 60, 60)) {
         c.header('Retry-After', '60');
@@ -113,7 +113,7 @@ authRoutes.get('/registration-options', async (c) => {
     return c.json(careers.results);
 });
 
-authRoutes.post('/register', async (c) => {
+authRoutes.post('/auth/register', async (c) => {
     const body = await c.req.json<{ email?: string; name?: string; password?: string; career_id?: string }>();
     const email = body.email?.trim().toLowerCase();
     const name = body.name?.trim();
@@ -148,7 +148,7 @@ authRoutes.post('/register', async (c) => {
     return c.json(registrationAccepted, 202);
 });
 
-authRoutes.get('/me', authMiddleware, async (c) => {
+authRoutes.get('/auth/me', authMiddleware, async (c) => {
     const user = c.get('user') as UserPayload;
     const profile = await c.env.DB.prepare(
         'SELECT id, email, name, role, career_id, is_active, account_status, created_at FROM users WHERE id = ?'
