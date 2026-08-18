@@ -1,11 +1,11 @@
-
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link, useLocation, useNavigate } from '../lib/router';
-import * as dataStore from '../lib/dataStore';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+import { MainLayout } from '../components/MainLayout';
 import ConflictPanel from '../components/ConflictPanel';
 import api from '../services/api';
+import * as dataStore from '../lib/dataStore';
 import { OFFLINE_DEMO_ENABLED } from '../lib/runtime';
-import { session } from '../lib/session';
 import { useAcademicPeriods } from '../lib/academicPeriods';
 import {
   calculateHealth,
@@ -16,14 +16,23 @@ import {
   type SchedulerSection as Section,
   type SchedulerTimeslot as Timeslot,
 } from '../features/scheduler/model';
-import { areDirectParentAndChild } from '../features/scheduler/relationships';
+import { buildPrioritizedAssignmentQueue } from '../features/assisted-planner/workflow';
+
+import { SchedulerHeader } from '../features/scheduler/components/SchedulerHeader';
+import { SchedulerStats } from '../features/scheduler/components/SchedulerStats';
+import { SchedulerGrid } from '../features/scheduler/components/SchedulerGrid';
+import { SchedulerSidebar } from '../features/scheduler/components/SchedulerSidebar';
+import { AssignmentModal } from '../features/scheduler/components/AssignmentModal';
+import { SectionModal } from '../features/scheduler/components/SectionModal';
+import { RoomSelectorModal } from '../features/scheduler/components/RoomSelectorModal';
+import { ExportModal } from '../features/scheduler/components/ExportModal';
+import { AuditDrawer, type AuditLogItem } from '../features/scheduler/components/AuditDrawer';
 
 export type { SchedulerConflict as Conflict } from '../features/scheduler/model';
 
-const SchedulerPage: React.FC = () => {
-  const location = useLocation();
-  const [activeTab, setActiveTab] = useState('Planificador');
+const DAYS_LIST = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 
+const SchedulerPage: React.FC = () => {
   // Data states
   const [sections, setSections] = useState<Section[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -32,98 +41,63 @@ const SchedulerPage: React.FC = () => {
   const [metrics, setMetrics] = useState<HealthMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
-  // Edit Assignment Modal state
+  // Modals & Panels state
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
-  const [editFormData, setEditFormData] = useState({
-    room_name: '',
-    teacher_name: '',
-  });
-
-  // Edit Section Backlog Modal state
   const [editingSection, setEditingSection] = useState<Section | null>(null);
   const [isSectionModalOpen, setIsSectionModalOpen] = useState(false);
-  const [allSubjects, setAllSubjects] = useState<dataStore.ImportedSubject[]>([]);
-  const [sectionFormData, setSectionFormData] = useState({
-    nrc: '',
-    subject_id: '',
-    type: 'TEO',
-    hours_per_week: 2,
-    level: 1,
-    teacher_name: '',
-    parent_section_id: '',
-  });
-  const [selectedSection, setSelectedSection] = useState<Section | null>(null);
-
-  // Period and workflow states
-  const { periods, selectedPeriod, setSelectedPeriod } = useAcademicPeriods();
-  const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
-  const [scheduleStatus, setScheduleStatus] = useState<'draft' | 'review' | 'published'>('draft');
-  const [showPeriodDropdown, setShowPeriodDropdown] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
-  const [showConflictsPanel, setShowConflictsPanel] = useState(false);
-  const [selectedConflict, setSelectedConflict] = useState<Conflict | null>(null);
-
-  // View mode states
-  const [viewMode, setViewMode] = useState<'sala' | 'nivel' | 'docente'>('nivel'); // Default to nivel view
-  const [showViewDropdown, setShowViewDropdown] = useState(false);
-  const [selectedViewLevel, setSelectedViewLevel] = useState<number>(1);
-  const [selectedViewTeacher, setSelectedViewTeacher] = useState<string | null>(null);
-  const [selectedViewRoom, setSelectedViewRoom] = useState<string>('SALA 201'); // Room for "Por Sala" view
-
-  // Export and Audit states
   const [showExportModal, setShowExportModal] = useState(false);
   const [showAuditPanel, setShowAuditPanel] = useState(false);
-  const [teacherDropdownOpen, setTeacherDropdownOpen] = useState<string | null>(null); // NRC of open dropdown
-  const [auditLog, setAuditLog] = useState<Array<{
-    id: string;
-    timestamp: Date;
-    action: string;
-    description: string;
-    user: string;
-  }>>([
-    { id: '1', timestamp: new Date(Date.now() - 3600000), action: 'save', description: 'Guardado borrador', user: 'Coordinador' },
-    { id: '2', timestamp: new Date(Date.now() - 7200000), action: 'assign', description: 'Asignado Anatomía I a Lunes Bloque 1', user: 'Coordinador' },
-  ]);
+  const [showConflictsPanel, setShowConflictsPanel] = useState(false);
+  const [, setSelectedConflict] = useState<Conflict | null>(null);
+  const [allSubjects, setAllSubjects] = useState<dataStore.ImportedSubject[]>([]);
 
-  // Drag and Drop states
+  // Period & Workflow state
+  const { periods, selectedPeriod, setSelectedPeriod } = useAcademicPeriods();
+  const [scheduleStatus, setScheduleStatus] = useState<'draft' | 'review' | 'published'>('draft');
+  const [saving, setSaving] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  // View mode states
+  const [viewMode, setViewMode] = useState<'nivel' | 'sala' | 'docente'>('nivel');
+  const [selectedViewLevel, setSelectedViewLevel] = useState<number>(1);
+  const [selectedViewTeacher, setSelectedViewTeacher] = useState<string | null>(null);
+  const [selectedViewRoom, setSelectedViewRoom] = useState<string>('SALA 201');
+
+  // Drag and Drop & Room Selector states
   const [draggingSection, setDraggingSection] = useState<Section | null>(null);
   const [dropTarget, setDropTarget] = useState<{ timeslotId: string; dayOfWeek: number; parallelIndex: number } | null>(null);
-  const [availableRooms, setAvailableRooms] = useState<any[]>([]);
-  const [showRoomSelector, setShowRoomSelector] = useState<{ section: Section; timeslotId: string; dayOfWeek: number; parallelIndex: number } | null>(null);
+  const [roomSelectorData, setRoomSelectorData] = useState<{
+    section: Section;
+    timeslotId: string;
+    dayOfWeek: number;
+    parallelIndex: number;
+  } | null>(null);
+  const [availableRooms, setAvailableRooms] = useState<Array<{ id: string; name: string; type: string; capacity: number }>>([]);
 
-  // Sidebar and Teacher states
-  const [sidebarTab, setSidebarTab] = useState<'secciones' | 'docentes'>('secciones');
-  const [parallelCount, setParallelCount] = useState<number>(3); // Number of columns per day - fixed at 3
+  // Sidebar & Teacher states
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [teachers, setTeachers] = useState<dataStore.ImportedTeacher[]>([]);
+  const [auditLog, setAuditLog] = useState<AuditLogItem[]>([
+    { id: '1', timestamp: new Date(Date.now() - 3600000), action: 'save', description: 'Guardado borrador', user: 'Coordinador' },
+    { id: '2', timestamp: new Date(Date.now() - 7200000), action: 'assign', description: 'Asignado módulo a Lunes Bloque 1', user: 'Coordinador' },
+  ]);
 
-  // Consolidate teachers list: registered + those found in assignments
-  const allAvailableTeachers = useMemo(() => {
-    const list = [...teachers];
+  const gridContainerRef = useRef<HTMLDivElement>(null);
 
-    // Add teachers found in assignments that aren't in the registered list
-    if (Array.isArray(assignments)) {
-      assignments.forEach(a => {
-        if (a && a.teacher_name && !list.some(t => t.nombre?.trim() === a.teacher_name?.trim())) {
-          list.push({
-            id: `temp-${a.teacher_name}`,
-            nombre: a.teacher_name.trim(),
-            email: '',
-            tipo_contrato: 'Desconocido',
-            max_horas: 20
-          });
-        }
-      });
-    }
+  // Helper to add audit logs
+  const addAuditEntry = (action: string, description: string) => {
+    setAuditLog(prev => [{
+      id: `audit-${Date.now()}`,
+      timestamp: new Date(),
+      action,
+      description,
+      user: 'Coordinador',
+    }, ...prev]);
+  };
 
-    return list;
-  }, [teachers, assignments]);
-
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // Collapsible sidebar state
-
-  // Available rooms from the authenticated sync cache (or explicit local demo).
-  // Load rooms and handle mapping between local/remote field names
+  // Load Rooms
   const refreshRooms = useCallback(() => {
     const rooms = dataStore.getRooms();
     const mapped = rooms.length > 0
@@ -131,7 +105,7 @@ const SchedulerPage: React.FC = () => {
         id: r.id,
         name: r.nombre || r.name || 'Sin Nombre',
         type: (r.tipo || r.type || 'TEO').toUpperCase(),
-        capacity: r.capacidad || r.capacity || 30
+        capacity: r.capacidad || r.capacity || 30,
       }))
       : OFFLINE_DEMO_ENABLED ? [
         { id: 'room-1', name: 'SALA 201', type: 'TEO', capacity: 40 },
@@ -143,128 +117,46 @@ const SchedulerPage: React.FC = () => {
         { id: 'room-7', name: 'SIMULADOR 2', type: 'SIM', capacity: 15 },
       ] : [];
     setAvailableRooms(mapped);
-  }, []);
-
-  // Filter rooms by section type
-  const getCompatibleRooms = (sectionType: string) => {
-    let compatible = [];
-    const type = (sectionType || '').toUpperCase();
-
-    if (type === 'SIM') {
-      compatible = availableRooms.filter(r => r.type === 'SIM' || r.type === 'LAB');
-    } else if (type === 'LAB') {
-      compatible = availableRooms.filter(r => r.type === 'LAB' || r.type === 'SIM');
-    } else if (type === 'TAL') {
-      compatible = availableRooms.filter(r => r.type === 'TAL');
-    } else {
-      compatible = availableRooms.filter(r => r.type === 'TEO' || r.type === 'AUD');
+    if (mapped[0] && !selectedViewRoom) {
+      setSelectedViewRoom(mapped[0].name);
     }
+  }, [selectedViewRoom]);
 
-    // If no specific match, show all rooms as last resort
-    if (compatible.length === 0) {
-      return availableRooms;
-    }
-    return compatible;
-  };
+  // Load Teachers & Subjects master data
+  useEffect(() => {
+    refreshRooms();
+    const storedTeachers = dataStore.getTeachers();
+    setTeachers(storedTeachers);
+    const storedSubjects = dataStore.getSubjects();
+    setAllSubjects(storedSubjects);
+  }, [refreshRooms]);
 
-  // Available teachers list; sample names exist only in the explicit local demo.
-  const availableTeachers = React.useMemo(() => {
-    const importedNames = teachers.map(t => t.nombre).filter(Boolean);
-    const demoNames = OFFLINE_DEMO_ENABLED ? ['Prof. Reyes', 'Prof. Soto', 'Dra. Rivas', 'Dr. Valenzuela', 'Ayud. Pérez', 'Prof. González', 'Dra. Martínez'] : [];
-    // Combine both lists, removing duplicates
-    const allNames = [...new Set([...importedNames, ...demoNames])];
-    return allNames;
-  }, [teachers]);
-
-  // Function to update teacher for a section
-  const updateSectionTeacher = async (sectionId: string, teacherName: string) => {
-    const teacher = teachers.find(item => item.nombre === teacherName);
-    if (dataStore.getAuthToken()) {
-      if (!teacher) {
-        setError('El docente seleccionado no existe en la base de datos.');
-        return;
+  const availableTeachersList = useMemo(() => {
+    const list = teachers.map(t => t.nombre).filter(Boolean);
+    assignments.forEach(a => {
+      if (a.teacher_name && !list.includes(a.teacher_name)) {
+        list.push(a.teacher_name);
       }
-      try {
-        await api.updateSectionTeacher(sectionId, teacher.id);
-        await loadScheduleData();
-      } catch (updateError) {
-        setError(updateError instanceof Error ? updateError.message : 'No fue posible asignar el docente');
-        return;
-      }
-    } else if (!OFFLINE_DEMO_ENABLED) {
-      setError('La sesión expiró. Vuelve a iniciar sesión.');
-      return;
-    } else {
-      setSections(prev => prev.map(s =>
-        s.id === sectionId ? { ...s, teacher_name: teacherName } : s
-      ));
-      setHasChanges(true);
-    }
-    setTeacherDropdownOpen(null);
-    addAuditEntry('assign', `Asignado ${teacherName} a NRC ${sections.find(s => s.id === sectionId)?.nrc}`);
-  };
+    });
+    return [...new Set(list)];
+  }, [teachers, assignments]);
 
-  // Add to audit log helper
-  const addAuditEntry = (action: typeof auditLog[0]['action'], description: string) => {
-    setAuditLog(prev => [{
-      id: `audit-${Date.now()}`,
-      timestamp: new Date(),
-      action,
-      description,
-      user: 'Coordinador'
-    }, ...prev]);
-  };
-
-  const statusLabels = {
-    draft: { label: 'Borrador', color: 'bg-slate-500', icon: 'edit_note' },
-    review: { label: 'En Revisión', color: 'bg-amber-500', icon: 'rate_review' },
-    published: { label: 'Publicado', color: 'bg-emerald-500', icon: 'check_circle' },
-  };
-
-  // Navigation items
-  const mainNavItems = [
-    ...(session.getUser()?.role === 'admin' ? [{ name: 'Resumen institucional', icon: 'dashboard', path: '/admin', badge: false }] : []),
-    { name: 'Modo asistido', icon: 'route', path: '/assistant', badge: false },
-    { name: 'Planificador', icon: 'grid_view', path: '/scheduler', badge: conflicts.filter(c => c.type === 'CRITICAL').length > 0 },
-    { name: 'Horarios', icon: 'calendar_month', path: '/horarios' },
-  ];
-
-  const masterNavItems = [
-    { name: 'Docentes', icon: 'groups', path: '/teachers' },
-    { name: 'Asignaturas', icon: 'menu_book', path: '/asignaturas' },
-    { name: 'Salas', icon: 'meeting_room', path: '/salas' },
-  ];
-
-  // Load data from remote or local storage
+  // Load schedule data
   const loadScheduleData = useCallback(async () => {
+    if (!selectedPeriod) return;
     setLoading(true);
+    setError(null);
     try {
       const token = dataStore.getAuthToken();
       if (token) {
-        // Online: load from remote API
-        const periodRes = await fetch(`/api/schedule?period_id=${selectedPeriod}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
-        const sectionsRes = await fetch(`/api/sections?period_id=${selectedPeriod}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        // The online planner must load the real time blocks as well. Without
-        // them the backlog can be selected, but the calendar has no drop cells.
-        const timeslotsRes = await fetch('/api/timeslots', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        const conflictsRes = await fetch(`/api/conflicts?resolved=false`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const statusRes = await fetch(`/api/schedule/status?period_id=${encodeURIComponent(selectedPeriod)}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const auditRes = await fetch(`/api/audit?period_id=${encodeURIComponent(selectedPeriod)}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const [periodRes, sectionsRes, timeslotsRes, conflictsRes, statusRes, auditRes] = await Promise.all([
+          fetch(`/api/schedule?period_id=${selectedPeriod}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`/api/sections?period_id=${selectedPeriod}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch('/api/timeslots', { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch('/api/conflicts?resolved=false', { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`/api/schedule/status?period_id=${encodeURIComponent(selectedPeriod)}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`/api/audit?period_id=${encodeURIComponent(selectedPeriod)}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        ]);
 
         if (timeslotsRes.ok) {
           const rawTimeslots = await timeslotsRes.json() as Array<Record<string, any>>;
@@ -282,690 +174,105 @@ const SchedulerPage: React.FC = () => {
         if (periodRes.ok && sectionsRes.ok) {
           const rawAsgs = await periodRes.json() as any[];
           const rawSecs = await sectionsRes.json() as any[];
-          
-          // Map assignments
+
           const mappedAsgs = mapBackendAssignments(rawAsgs);
           setAssignments(mappedAsgs);
 
-          // Map sections and sync assigned_slots count from database
-          const mappedSecs = rawSecs.map((s: any) => ({
+          const mappedSecs: Section[] = rawSecs.map((s: any) => ({
             id: s.id,
             subject_id: s.subject_id,
             nrc: s.nrc,
             subject_name: s.subject_name || s.nombre,
             subject_code: s.subject_code || s.codigo,
-            level: s.level,
-            type: s.type,
+            level: Number(s.level || 1),
+            type: s.type || 'TEO',
             parent_section_id: s.parent_section_id || null,
             parent_nrc: s.parent_nrc || null,
-            hours_per_week: s.hours_per_week || s.horas,
-            teacher_name: s.teacher_name || s.docente_nombre || null,
-            priority: s.priority || 0,
-            assigned_slots: s.assigned_slots || 0
+            parent_subject_name: s.parent_subject_name || null,
+            hours_per_week: Number(s.hours_per_week || 2),
+            assigned_slots: Number(s.assigned_slots || 0),
+            priority: Number(s.priority || 0),
+            teacher_name: s.teacher_name || s.profesor || null,
           }));
           setSections(mappedSecs);
 
-          // Map conflicts
+          let loadedConflicts: Conflict[] = [];
           if (conflictsRes.ok) {
             const rawConflicts = await conflictsRes.json() as any[];
-            const mappedConflicts = rawConflicts.map((c: any) => ({
+            loadedConflicts = rawConflicts.map(c => ({
               id: c.id,
+              assignment_id: c.assignment_id,
               type: c.type,
               rule_code: c.rule_code,
-              description: c.description,
+              description: c.description || '',
               subject_name: c.subject_name || '',
               nrc: c.nrc || '',
-              teacher_name: c.teacher_name || '',
+              teacher_name: c.teacher_name || null,
               timeslot_label: c.timeslot_label || '',
-              day_of_week: c.day_of_week,
-              parallel_index: 0 // Default
+              day_of_week: Number(c.day_of_week || 1),
+              parallel_index: Number(c.parallel_index || 0),
+              is_resolved: c.is_resolved,
             }));
-            setConflicts(mappedConflicts);
+            setConflicts(loadedConflicts);
           }
+
           if (statusRes.ok) {
-            const status = await statusRes.json() as { status: 'draft' | 'published' };
-            setScheduleStatus(status.status);
+            const statusData = await statusRes.json() as { status: 'draft' | 'review' | 'published' };
+            setScheduleStatus(statusData.status);
           }
+
           if (auditRes.ok) {
-            const rows = await auditRes.json() as Array<Record<string, any>>;
-            setAuditLog(rows.map(row => ({
-              id: row.id,
-              timestamp: new Date(row.created_at),
-              action: String(row.action || '').toLowerCase(),
-              description: `${row.action} · ${row.entity_type}`,
-              user: row.user_name || 'Usuario demo',
-            })));
+            const auditData = await auditRes.json() as any[];
+            if (Array.isArray(auditData) && auditData.length > 0) {
+              setAuditLog(auditData.map(a => ({
+                id: a.id,
+                timestamp: new Date(a.created_at),
+                action: a.action,
+                description: `${a.action} ${a.entity_type} ${a.entity_id || ''}`,
+                user: a.user_name || 'Usuario',
+              })));
+            }
           }
-          return;
+
+          setMetrics(calculateHealth(mappedSecs, mappedAsgs, loadedConflicts));
         }
+      } else if (OFFLINE_DEMO_ENABLED) {
+        setTimeslots(dataStore.getCustomTimeslots());
+        const localSecs = dataStore.getSections().map((s: any) => ({
+          id: s.id,
+          subject_id: s.subject_id || '',
+          nrc: s.nrc || '',
+          subject_name: s.nombre || s.subject_name || '',
+          subject_code: s.codigo || s.subject_code || '',
+          level: Number(s.nivel || s.level || 1),
+          type: s.tipo || s.type || 'TEO',
+          parent_section_id: s.nrc_teorico || s.parent_section_id || null,
+          parent_nrc: s.parent_nrc || null,
+          hours_per_week: Number(s.horas || s.hours_per_week || 2),
+          assigned_slots: Number(s.assigned_slots || 0),
+          priority: 0,
+          teacher_name: s.profesor || s.teacher_name || null,
+        }));
+        setSections(localSecs);
+        setMetrics(calculateHealth(localSecs, [], []));
       }
-      
-      if (OFFLINE_DEMO_ENABLED) loadLocalOrMockData();
-      else setError('No fue posible cargar el horario desde el servidor.');
     } catch (err) {
-      console.error('Error loading schedule:', err);
-      if (OFFLINE_DEMO_ENABLED) loadLocalOrMockData();
-      else setError(err instanceof Error ? err.message : 'No fue posible cargar el horario desde el servidor.');
+      console.error('Error loading schedule data:', err);
+      setError(err instanceof Error ? err.message : 'Error al cargar datos');
     } finally {
       setLoading(false);
     }
   }, [selectedPeriod]);
 
-  const loadLocalOrMockData = () => {
-    // Fixed timeslots
-    const customTimeslots = dataStore.getCustomTimeslots();
-    setTimeslots(customTimeslots);
-
-    // Load from local storage
-    const localSections = dataStore.getSections(selectedPeriod);
-    const localTeachers = dataStore.getTeachers();
-
-    if (localTeachers.length > 0) {
-      setTeachers(localTeachers);
-    } else {
-      setTeachers([
-        { id: 't1', nombre: 'Prof. Reyes', email: 'reyes@u.cl', max_horas: 18, tipo_contrato: 'Planta', availability: { 'ts-m3-1': 'blocked', 'ts-m4-1': 'blocked', 'ts-t1-3': 'blocked', 'ts-t2-3': 'blocked' } },
-        { id: 't2', nombre: 'Prof. Soto', email: 'soto@u.cl', max_horas: 20 },
-        { id: 't3', nombre: 'Dra. Rivas', email: 'rivas@u.cl', max_horas: 12, availability: { 'ts-m1-5': 'blocked', 'ts-m2-5': 'blocked' } }
-      ]);
-    }
-
-    // Try local assignments
-    const localAsgsStr = localStorage.getItem(`scheduler_assignments_${selectedPeriod}`);
-    let loadedAsgs: Assignment[] = [];
-    if (localAsgsStr) {
-      try {
-        loadedAsgs = JSON.parse(localAsgsStr);
-        setAssignments(loadedAsgs);
-      } catch (e) {
-        console.error('Error parsing local assignments:', e);
-      }
-    }
-
-    if (loadedAsgs.length === 0 && (!localAsgsStr)) {
-      // Use default demo assignments
-      loadedAsgs = [
-        { id: 'a1', section_id: '4', nrc: '23492', subject_name: 'Salud Pública', subject_code: 'DSAL0034', level: 3, teacher_name: 'Dr. Valenzuela', room_name: 'SALA 204', room_type: 'TEO', timeslot_id: 'ts-m1', timeslot_label: 'M1', day_of_week: 1, parallel_index: 0 },
-        { id: 'a2', section_id: '5', nrc: '23490', subject_name: 'Fisiología I', subject_code: 'DFIS0032', level: 2, teacher_name: 'P. Soto', room_name: 'SALA 204', room_type: 'TEO', timeslot_id: 'ts-m2', timeslot_label: 'M2', day_of_week: 1, parallel_index: 0 },
-        { id: 'a3', section_id: '6', nrc: '23491', subject_name: 'Bioética', subject_code: 'DBIE0033', level: 3, teacher_name: 'Prof. Reyes', room_name: 'SALA 204', room_type: 'TEO', timeslot_id: 'ts-m2', timeslot_label: 'M2', day_of_week: 2, parallel_index: 1 },
-      ];
-      setAssignments(loadedAsgs);
-    }
-
-    // Load sections
-    if (localSections.length > 0) {
-      const schedulerSections: Section[] = localSections.map(s => {
-        const assignedCount = loadedAsgs.filter(a => a.section_id === s.id).length;
-        return {
-          id: s.id,
-          subject_id: dataStore.getSubjects().find(subject => subject.codigo === s.codigo)?.id || '',
-          nrc: s.nrc,
-          subject_name: s.nombre,
-          subject_code: s.codigo,
-          level: s.nivel,
-          type: s.tipo,
-          parent_section_id: localSections.find(candidate => candidate.nrc === s.nrc_teorico)?.id || null,
-          parent_nrc: s.nrc_teorico || null,
-          hours_per_week: s.horas,
-          teacher_name: s.docente_nombre || null,
-          priority: s.nivel >= 3 ? 1 : 0,
-          assigned_slots: assignedCount,
-        };
-      });
-      setSections(schedulerSections);
-    } else {
-      setSections([
-        { id: '1', subject_id: 'sub-morf', nrc: '23456', subject_name: 'Morfología – LAB', subject_code: 'DMOR0030', level: 3, type: 'LAB', parent_section_id: null, parent_nrc: null, hours_per_week: 4, teacher_name: 'Prof. Reyes', priority: 2, assigned_slots: 0 },
-        { id: '2', subject_id: 'sub-bio', nrc: '23489', subject_name: 'Biomecánica I', subject_code: 'DBIO0031', level: 3, type: 'TEO', parent_section_id: null, parent_nrc: null, hours_per_week: 2, teacher_name: 'Prof. Soto', priority: 1, assigned_slots: 0 },
-        { id: '3', subject_id: 'sub-ana', nrc: '11202', subject_name: 'Anatomía II', subject_code: 'DANA0020', level: 2, type: 'TEO', parent_section_id: null, parent_nrc: null, hours_per_week: 4, teacher_name: 'Dra. Rivas', priority: 0, assigned_slots: 4 },
-      ]);
-    }
-
-    // Try local conflicts
-    const localConflictsStr = localStorage.getItem(`scheduler_conflicts_${selectedPeriod}`);
-    if (localConflictsStr) {
-      try {
-        setConflicts(JSON.parse(localConflictsStr));
-      } catch (e) {}
-    } else {
-      setConflicts([
-        { id: 'c1', type: 'CRITICAL', rule_code: 'TEACHER_DUPLICATE', description: 'El Docente Reyes está asignado simultáneamente en Morfología (M2) y Bioética (M2)', subject_name: 'Bioética', nrc: '23491', teacher_name: 'Prof. Reyes', timeslot_label: 'M2', day_of_week: 2, parallel_index: 0 },
-      ]);
-    }
-  };
-
-  // Initialize data on mount / period change
   useEffect(() => {
-    const initializeData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        if (!selectedPeriod) return;
-        if (dataStore.isAuthenticated()) {
-          console.log('[SchedulerPage] Syncing with remote database...');
-          await dataStore.syncWithRemote(selectedPeriod);
-        }
-        await loadScheduleData();
-      } catch (err) {
-        console.error('Error initializing data:', err);
-        if (OFFLINE_DEMO_ENABLED) {
-          setError('Error al cargar datos. Usando modo demo local.');
-          loadLocalOrMockData();
-        } else {
-          setError(err instanceof Error ? err.message : 'No fue posible cargar los datos del servidor.');
-        }
-      } finally {
-        refreshRooms();
-        setLoading(false);
-      }
-    };
-    initializeData();
-  }, [selectedPeriod, loadScheduleData]);
+    loadScheduleData();
+  }, [loadScheduleData]);
 
-  // Recalculate metrics dynamically based on actual state
-  useEffect(() => {
-    setMetrics(calculateHealth(sections, assignments, conflicts));
-  }, [assignments, sections, conflicts]);
-
-  // Get unassigned sections
-  const unassignedSections = sections.filter(s => s.assigned_slots < s.hours_per_week);
-
-  // Get filtered assignments based on view mode
-  const getFilteredAssignments = () => {
-    if (viewMode === 'sala') {
-      return assignments.filter(a => a.room_name === selectedViewRoom);
-    }
-    if (viewMode === 'nivel') {
-      return assignments.filter(a => String(a.level) === String(selectedViewLevel));
-    }
-    if (viewMode === 'docente' && selectedViewTeacher) {
-      return assignments.filter(a => a.teacher_name === selectedViewTeacher);
-    }
-    return assignments;
-  };
-
-  // Check if ANY assignment exists in a slot (for conflict detection)
-  const getAnyAssignmentForSlot = (timeslotId: string, dayOfWeek: number) => {
-    return assignments.find(a => a.timeslot_id === timeslotId && a.day_of_week === dayOfWeek);
-  };
-
-  // Get assignments for a specific slot and parallel index
-  const getAssignmentForSlot = (timeslotId: string, dayOfWeek: number, parallelIndex: number = 0) => {
-    const filtered = getFilteredAssignments();
-    return filtered.find(a =>
-      a.timeslot_id === timeslotId &&
-      a.day_of_week === dayOfWeek &&
-      a.parallel_index === parallelIndex
-    );
-  };
-
-  // Check if slot has conflict
-  const hasConflict = (timeslotId: string, dayOfWeek: number) => {
-    const ts = timeslots.find(t => t.id === timeslotId);
-    if (!ts) return null;
-    return conflicts.find(c => c.timeslot_label === ts.label && c.day_of_week === dayOfWeek);
-  };
-
-  // Calculate total students for a timeslot-day combination
-  const getStudentCountForSlot = (timeslotId: string, dayOfWeek: number): number => {
-    const slotAssignments = assignments.filter(a =>
-      a.timeslot_id === timeslotId && a.day_of_week === dayOfWeek
-    );
-    // Get the sections for these assignments and sum their expected students
-    return slotAssignments.reduce((total, a) => {
-      const section = sections.find(s => s.id === a.section_id);
-      // If section has expected students, use that; otherwise estimate 30
-      return total + (section ? 30 : 30);
-    }, 0);
-  };
-
-  // Check if a slot is available for the selected section
-  const isSlotAvailable = (timeslotId: string, dayOfWeek: number, parallelIndex: number = 0): { available: boolean; reason?: string; score: number } => {
-    if (!selectedSection) return { available: false, score: 0 };
-
-    // Check if slot already has assignment in THIS parallel
-    const existingInParallel = assignments.find(a =>
-      a.timeslot_id === timeslotId &&
-      a.day_of_week === dayOfWeek &&
-      a.parallel_index === parallelIndex
-    );
-    if (existingInParallel) {
-      return { available: false, reason: 'Paralelo ocupado', score: 0 };
-    }
-
-    const parentChildConflict = assignments.find(assignment => {
-      if (assignment.timeslot_id !== timeslotId || assignment.day_of_week !== dayOfWeek) return false;
-      const assignedSection = sections.find(section => section.id === assignment.section_id);
-      return assignedSection ? areDirectParentAndChild(selectedSection, assignedSection) : false;
-    });
-    if (parentChildConflict) {
-      return { available: false, reason: 'Teoría y práctica no pueden coincidir', score: 0 };
-    }
-
-    // Check for level conflicts (same level, same slot, any parallel) - Optional: allow different parallels for same level?
-    // Usually, same level sections should ideally not overlap, but it depends on the institution.
-    // For now, let's keep it as a conflict if it's the SAME LEVEL in the SAME SLOT (independent of parallel?)
-    // Actually, if we have parallels, we WANT same level sections to be able to run in parallel.
-    // So level conflict only applies WITHIN the same parallel, or if it's the SAME SECTION.
-    // Let's say level conflict is when same level exists in the same slot.
-    const sameLevel = assignments.filter(a =>
-      a.level === selectedSection.level &&
-      a.timeslot_id === timeslotId &&
-      a.day_of_week === dayOfWeek
-    );
-    // But wait, if they are different parallels, they SHOULD be allowed.
-    // A conflict only exists if the teacher is the same or the room is the same.
-    // So 'sameLevel' is not necessarily a hard block anymore if we have column support.
-
-    // Check teacher availability and duplicate assignments
-    if (selectedSection.teacher_name) {
-      // 1. Check if teacher is already assigned to this exact slot anywhere
-      const teacherConflict = assignments.find(a =>
-        a.teacher_name === selectedSection.teacher_name &&
-        a.timeslot_id === timeslotId &&
-        a.day_of_week === dayOfWeek
-      );
-      if (teacherConflict) {
-        return { available: false, reason: 'Docente ya ocupado', score: 0 };
-      }
-
-      // 2. Check for personal unavailability (blocked periods)
-      const teacherObj = teachers.find(t => t.nombre === selectedSection.teacher_name);
-      if (teacherObj?.availability && teacherObj.availability[`${timeslotId}-${dayOfWeek}`] === 'blocked') {
-        return { available: false, reason: 'Fuera de disponibilidad', score: 0 };
-      }
-    }
-
-    // Basic scoring
-    let score = 100;
-
-    // Teacher load penalty
-    if (selectedSection.teacher_name) {
-      const hours = getTeacherHours(selectedSection.teacher_name);
-      const teacherObj = teachers.find(t => t.nombre === selectedSection.teacher_name);
-      const max = teacherObj?.max_horas || 20;
-      if (hours >= max) score -= 40;
-    }
-
-    const slot = timeslots.find(t => t.id === timeslotId);
-    if (slot && slot.order_index <= 2) score += 10;
-    if (dayOfWeek <= 3) score += 5;
-
-    return { available: true, score };
-  };
-
-  // Get slot availability color class
-  const getSlotColorClass = (timeslotId: string, dayOfWeek: number, parallelIndex: number = 0): string => {
-    if (!selectedSection) return '';
-    const { available, score } = isSlotAvailable(timeslotId, dayOfWeek, parallelIndex);
-
-    if (!available) return 'bg-red-50/50 dark:bg-red-900/10 cursor-not-allowed opacity-60';
-    if (score >= 100) return 'bg-emerald-100/80 dark:bg-emerald-500/20 border-2 border-emerald-400/60 dark:border-emerald-500/40 cursor-pointer hover:bg-emerald-200 dark:hover:bg-emerald-500/30 animate-pulse';
-    return 'bg-emerald-50/50 dark:bg-emerald-900/20 border-2 border-dashed border-emerald-300 dark:border-emerald-700 cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/30';
-  };
-
-  // Assign section to slot
-  const handleAssignToSlot = async (timeslotId: string, dayOfWeek: number, parallelIndex: number = 0) => {
-    const sectionToAssign = draggingSection || selectedSection;
-    if (!sectionToAssign) return;
-
-    const { available } = isSlotAvailable(timeslotId, dayOfWeek, parallelIndex);
-    if (!available) return;
-
-    setShowRoomSelector({ section: sectionToAssign, timeslotId, dayOfWeek, parallelIndex });
-    setDraggingSection(null);
-  };
-
-  // Confirm assignment with selected room
-  const confirmAssignment = async (roomName: string) => {
-    if (!showRoomSelector) return;
-
-    const { section, timeslotId, dayOfWeek, parallelIndex } = showRoomSelector;
-    const timeslot = timeslots.find(t => t.id === timeslotId);
-    if (!timeslot) return;
-
-    // Find the room id
-    const roomsList = dataStore.getRooms();
-    const targetRoom = roomsList.find(r => r.nombre === roomName);
-    const roomId = targetRoom?.id || roomName;
-
-    setSaving(true);
-    try {
-      const token = dataStore.getAuthToken();
-      if (token) {
-        // Online: save to remote API
-        const assignResponse = await fetch('/api/schedule/assign', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            section_id: section.id,
-            room_id: roomId,
-            timeslot_id: timeslotId,
-            day_of_week: dayOfWeek,
-            period_id: selectedPeriod
-          })
-        });
-
-        if (!assignResponse.ok) {
-          const errData = await assignResponse.json() as any;
-          throw new Error(errData.error || 'Error al asignar');
-        }
-
-        // Success: reload schedule data to stay perfectly in sync with D1 (including conflicts)
-        await loadScheduleData();
-        addAuditEntry('assign', `Asignado ${section.subject_name} a ${days[dayOfWeek - 1]} ${timeslot.label} (Sec ${parallelIndex}) en ${roomName}`);
-      } else if (OFFLINE_DEMO_ENABLED) {
-        // Offline: save to local state and localStorage
-        const newAssignment: Assignment = {
-          id: `asg-${Date.now()}`,
-          section_id: section.id,
-          nrc: section.nrc,
-          subject_name: section.subject_name,
-          subject_code: section.subject_code,
-          level: section.level,
-          teacher_name: section.teacher_name,
-          room_name: roomName,
-          room_type: section.type,
-          timeslot_id: timeslotId,
-          timeslot_label: timeslot.label,
-          day_of_week: dayOfWeek,
-          parallel_index: parallelIndex
-        };
-
-        const updatedAsgs = [...assignments, newAssignment];
-        setAssignments(updatedAsgs);
-        localStorage.setItem(`scheduler_assignments_${selectedPeriod}`, JSON.stringify(updatedAsgs));
-
-        setSections(prev => prev.map(s => s.id === section.id ? { ...s, assigned_slots: s.assigned_slots + 1 } : s));
-        setHasChanges(true);
-        addAuditEntry('assign', `Asignado ${section.subject_name} a ${days[dayOfWeek - 1]} ${timeslot.label} (Sec ${parallelIndex}) en ${roomName}`);
-      } else {
-        throw new Error('La sesión expiró. Vuelve a iniciar sesión.');
-      }
-      
-      if (section.assigned_slots + 1 >= section.hours_per_week) setSelectedSection(null);
-      setShowRoomSelector(null);
-    } catch (err: any) {
-      console.error('Assignment failed:', err);
-      alert(`⚠️ Error al asignar: ${err.message}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Unassign
-  const unassignFromSlot = async (assignmentId: string) => {
-    const assignment = assignments.find(a => a.id === assignmentId);
-    if (!assignment) return;
-
-    setSaving(true);
-    try {
-      const token = dataStore.getAuthToken();
-      if (token) {
-        // Online: delete from remote API
-        const deleteResponse = await fetch(`/api/schedule/${assignmentId}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        if (!deleteResponse.ok) {
-          const errData = await deleteResponse.json() as any;
-          throw new Error(errData.error || 'Error al eliminar');
-        }
-
-        // Success: reload schedule data
-        await loadScheduleData();
-        addAuditEntry('unassign', `Devuelto ${assignment.subject_name} al backlog`);
-      } else if (OFFLINE_DEMO_ENABLED) {
-        // Offline: remove from local state and update localStorage
-        const updatedAsgs = assignments.filter(a => a.id !== assignmentId);
-        setAssignments(updatedAsgs);
-        localStorage.setItem(`scheduler_assignments_${selectedPeriod}`, JSON.stringify(updatedAsgs));
-
-        setSections(prev => prev.map(s => s.id === assignment.section_id ? { ...s, assigned_slots: Math.max(0, s.assigned_slots - 1) } : s));
-        setHasChanges(true);
-        addAuditEntry('unassign', `Devuelto ${assignment.subject_name} al backlog`);
-      } else {
-        throw new Error('La sesión expiró. Vuelve a iniciar sesión.');
-      }
-    } catch (err: any) {
-      console.error('Unassign failed:', err);
-      alert(`⚠️ Error al eliminar asignación: ${err.message}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const openEditAssignmentModal = (asg: Assignment) => {
-    setEditingAssignment(asg);
-    setEditFormData({
-      room_name: asg.room_name || '',
-      teacher_name: asg.teacher_name || '',
-    });
-  };
-
-  const saveEditedAssignment = async () => {
-    if (!editingAssignment) return;
-
-    const roomsList = dataStore.getRooms();
-    const targetRoom = roomsList.find(r => r.nombre === editFormData.room_name);
-    const targetTeacher = teachers.find(t => t.nombre === editFormData.teacher_name);
-
-    if (dataStore.getAuthToken()) {
-      try {
-        await api.updateAssignment(editingAssignment.id, { room_id: targetRoom?.id || null, teacher_id: targetTeacher?.id || null });
-        await loadScheduleData();
-        setEditingAssignment(null);
-        return;
-      } catch (updateError) {
-        setError(updateError instanceof Error ? updateError.message : 'No fue posible actualizar la asignación');
-        return;
-      }
-    }
-
-    if (!OFFLINE_DEMO_ENABLED) {
-      setError('La sesión expiró. Vuelve a iniciar sesión.');
-      return;
-    }
-    const updatedAsgs = assignments.map(a => {
-      if (a.id === editingAssignment.id) {
-        return {
-          ...a,
-          room_id: targetRoom?.id || null,
-          room_name: editFormData.room_name || null,
-          teacher_id: targetTeacher?.id || null,
-          teacher_name: editFormData.teacher_name || null,
-        };
-      }
-      return a;
-    });
-
-    setAssignments(updatedAsgs);
-    localStorage.setItem(`scheduler_assignments_${selectedPeriod}`, JSON.stringify(updatedAsgs));
-    setHasChanges(true);
-    addAuditEntry('save', `Negociación en ${editingAssignment.subject_name}: Cambiado a sala ${editFormData.room_name || 'Sin sala'} y docente ${editFormData.teacher_name || 'Sin docente'}`);
-    setEditingAssignment(null);
-  };
-
-  const openEditSectionModal = (sec?: Section) => {
-    const subjectsList = dataStore.getSubjects();
-    setAllSubjects(subjectsList);
-    
-    if (sec) {
-      const matchedSub = subjectsList.find(s => s.codigo === sec.subject_code);
-      setEditingSection(sec);
-      setSectionFormData({
-        nrc: sec.nrc,
-        subject_id: sec.subject_id || matchedSub?.id || '',
-        type: sec.type,
-        hours_per_week: sec.hours_per_week,
-        level: sec.level,
-        teacher_name: sec.teacher_name || '',
-        parent_section_id: sec.parent_section_id || '',
-      });
-    } else {
-      setEditingSection(null);
-      setSectionFormData({
-        nrc: '',
-        subject_id: subjectsList.length > 0 ? subjectsList[0].id : '',
-        type: 'TEO',
-        hours_per_week: 2,
-        level: 1,
-        teacher_name: '',
-        parent_section_id: '',
-      });
-    }
-    setIsSectionModalOpen(true);
-  };
-
-  const saveEditedSection = async () => {
-    const targetSub = allSubjects.find(s => s.id === sectionFormData.subject_id);
-    if (!targetSub || !sectionFormData.nrc.trim()) {
-      alert('Por favor seleccione una asignatura e ingrese el NRC.');
-      return;
-    }
-    if (sectionFormData.type !== 'TEO' && !sectionFormData.parent_section_id) {
-      alert('Seleccione la sección teórica padre para esta práctica.');
-      return;
-    }
-
-    const id = editingSection ? editingSection.id : `section-${Date.now()}`;
-    const newSectionData: dataStore.ImportedSection = {
-      id,
-      nrc: sectionFormData.nrc,
-      codigo: targetSub.codigo,
-      nombre: targetSub.nombre,
-      nivel: Number(sectionFormData.level),
-      horas: Number(sectionFormData.hours_per_week),
-      tipo: sectionFormData.type as any,
-      docente_nombre: sectionFormData.teacher_name || undefined,
-      periodo: selectedPeriod,
-      parent_section_id: sectionFormData.parent_section_id || undefined,
-      nrc_teorico: sections.find(section => section.id === sectionFormData.parent_section_id)?.nrc,
-    };
-
-    if (dataStore.getAuthToken()) {
-      const teacher = teachers.find(item => item.nombre === sectionFormData.teacher_name);
-      try {
-        await api.saveSection({
-          id,
-          period_id: selectedPeriod,
-          subject_id: sectionFormData.subject_id,
-          teacher_id: teacher?.id || null,
-          nrc: sectionFormData.nrc,
-          type: sectionFormData.type,
-          parent_section_id: sectionFormData.type === 'TEO' ? null : sectionFormData.parent_section_id,
-          hours_per_week: Number(sectionFormData.hours_per_week),
-        }, Boolean(editingSection));
-        await loadScheduleData();
-        setIsSectionModalOpen(false);
-        return;
-      } catch (sectionError) {
-        setError(sectionError instanceof Error ? sectionError.message : 'No fue posible guardar la sección');
-        return;
-      }
-    }
-
-    if (!OFFLINE_DEMO_ENABLED) {
-      setError('La sesión expiró. Vuelve a iniciar sesión.');
-      return;
-    }
-    dataStore.addOrUpdateSection(newSectionData);
-    
-    // Refresh sections state
-    refreshBacklog();
-    setIsSectionModalOpen(false);
-  };
-
-  const handleDeleteSection = async (id: string, name: string) => {
-    if (window.confirm(`¿Está seguro de que desea eliminar la sección "${name}"? Esto también removerá cualquier horario programado para ella.`)) {
-      if (dataStore.getAuthToken()) {
-        try {
-          await api.deleteSection(id);
-          await loadScheduleData();
-          return;
-        } catch (deleteError) {
-          setError(deleteError instanceof Error ? deleteError.message : 'No fue posible eliminar la sección');
-          return;
-        }
-      }
-      if (!OFFLINE_DEMO_ENABLED) {
-        setError('La sesión expiró. Vuelve a iniciar sesión.');
-        return;
-      }
-      dataStore.deleteSection(id);
-      
-      const localAsgsStr = localStorage.getItem(`scheduler_assignments_${selectedPeriod}`);
-      if (localAsgsStr) {
-        try {
-          const loadedAsgs: Assignment[] = JSON.parse(localAsgsStr);
-          const filteredAsgs = loadedAsgs.filter(a => a.section_id !== id);
-          setAssignments(filteredAsgs);
-          localStorage.setItem(`scheduler_assignments_${selectedPeriod}`, JSON.stringify(filteredAsgs));
-        } catch (e) {
-          console.error(e);
-        }
-      }
-
-      refreshBacklog();
-    }
-  };
-
-  const refreshBacklog = () => {
-    const localSections = dataStore.getSections(selectedPeriod);
-    const loadedAsgsStr = localStorage.getItem(`scheduler_assignments_${selectedPeriod}`);
-    let loadedAsgs: Assignment[] = [];
-    if (loadedAsgsStr) {
-      try { loadedAsgs = JSON.parse(loadedAsgsStr); } catch (e) {}
-    }
-    
-    const schedulerSections: Section[] = localSections.map(s => {
-      const assignedCount = loadedAsgs.filter(a => a.section_id === s.id).length;
-      return {
-        id: s.id,
-        subject_id: dataStore.getSubjects().find(subject => subject.codigo === s.codigo)?.id || '',
-        nrc: s.nrc,
-        subject_name: s.nombre,
-        subject_code: s.codigo,
-        level: s.nivel,
-        type: s.tipo,
-        parent_section_id: localSections.find(candidate => candidate.nrc === s.nrc_teorico)?.id || null,
-        parent_nrc: s.nrc_teorico || null,
-        hours_per_week: s.horas,
-        teacher_name: s.docente_nombre || null,
-        priority: s.nivel >= 3 ? 1 : 0,
-        assigned_slots: assignedCount,
-      };
-    });
-    setSections(schedulerSections);
-  };
-
-  // Drag and Drop
+  // Drag & Drop handlers
   const handleDragStart = (e: React.DragEvent, section: Section) => {
     setDraggingSection(section);
-    setSelectedSection(section);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', section.id);
-  };
-
-  const handleDragOver = (e: React.DragEvent, timeslotId: string, dayOfWeek: number, parallelIndex: number = 0) => {
-    e.preventDefault();
-    if (!draggingSection) return;
-    const { available } = isSlotAvailable(timeslotId, dayOfWeek, parallelIndex);
-    e.dataTransfer.dropEffect = available ? 'move' : 'none';
-    setDropTarget({ timeslotId, dayOfWeek, parallelIndex });
-  };
-
-  const handleDrop = (e: React.DragEvent, timeslotId: string, dayOfWeek: number, parallelIndex: number = 0) => {
-    e.preventDefault();
-    if (!draggingSection) return;
-    handleAssignToSlot(timeslotId, dayOfWeek, parallelIndex);
-    setDropTarget(null);
+    e.dataTransfer.setData('text/plain', JSON.stringify(section));
+    e.dataTransfer.effectAllowed = 'copyMove';
   };
 
   const handleDragEnd = () => {
@@ -973,1888 +280,458 @@ const SchedulerPage: React.FC = () => {
     setDropTarget(null);
   };
 
-  // Difficulty Score
-  const calculateDifficultyScore = (section: Section): number => {
-    let difficulty = section.hours_per_week * 10;
-    if (section.type === 'LAB') difficulty += 30;
-    if (section.type === 'SIM') difficulty += 40;
-    if (section.type === 'TAL') difficulty += 30;
-    if (section.level >= 4) difficulty += 15;
-    return difficulty + (section.priority * 15);
+  const handleDragOver = (e: React.DragEvent, timeslotId: string, dayOfWeek: number, parallelIndex: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setDropTarget({ timeslotId, dayOfWeek, parallelIndex });
   };
 
-  const sortedUnassignedSections = [...unassignedSections].sort((a, b) => calculateDifficultyScore(b) - calculateDifficultyScore(a));
-
-  const sectionsByLevel = sortedUnassignedSections
-    .filter(section => viewMode !== 'nivel' || String(section.level) === String(selectedViewLevel))
-    .reduce((acc, section) => {
-      if (!acc[section.level]) acc[section.level] = [];
-      acc[section.level].push(section);
-      return acc;
-    }, {} as Record<number, Section[]>);
-
-  // Suggestions
-  const getBestSlotsForSection = (section: Section): Array<{ slotId: string; dayOfWeek: number; parallelIndex: number; score: number }> => {
-    const options: Array<{ slotId: string; dayOfWeek: number; parallelIndex: number; score: number }> = [];
-    timeslots.forEach(slot => {
-      [1, 2, 3, 4, 5].forEach(day => {
-        for (let p = 0; p < parallelCount; p++) {
-          const { available, score } = isSlotAvailable(slot.id, day, p);
-          if (available) options.push({ slotId: slot.id, dayOfWeek: day, parallelIndex: p, score });
-        }
-      });
-    });
-    return options.sort((a, b) => b.score - a.score).slice(0, 3);
+  const handleDragLeave = () => {
+    setDropTarget(null);
   };
 
-  const suggestSlotForSection = async (section: Section) => {
-    if (dataStore.getAuthToken()) {
+  const getCompatibleRoomsForType = (sectionType: string) => {
+    const type = (sectionType || '').toUpperCase();
+    if (type === 'SIM') return availableRooms.filter(r => r.type === 'SIM' || r.type === 'LAB');
+    if (type === 'LAB') return availableRooms.filter(r => r.type === 'LAB' || r.type === 'SIM');
+    if (type === 'TAL') return availableRooms.filter(r => r.type === 'TAL');
+    return availableRooms.filter(r => r.type === 'TEO' || r.type === 'AUD');
+  };
+
+  const handleDrop = (e: React.DragEvent, timeslotId: string, dayOfWeek: number, parallelIndex: number) => {
+    e.preventDefault();
+    setDropTarget(null);
+
+    let sectionToAssign = draggingSection;
+    if (!sectionToAssign) {
       try {
-        const [top] = await api.getSlotScores(section.id, selectedPeriod);
-        if (!top) { alert('No hay bloques disponibles'); return; }
-        setSelectedSection(section);
-        alert(`Opción recomendada: ${days[top.day_of_week - 1]} ${top.timeslot_label}, ${top.room_name} (${top.score}%)`);
-      } catch (suggestionError) {
-        setError(suggestionError instanceof Error ? suggestionError.message : 'No fue posible calcular una sugerencia');
+        const raw = e.dataTransfer.getData('text/plain');
+        if (raw) sectionToAssign = JSON.parse(raw);
+      } catch {
+        return;
       }
-      return;
     }
-    if (!OFFLINE_DEMO_ENABLED) {
-      setError('La sesión expiró. Vuelve a iniciar sesión.');
-      return;
-    }
-    const best = getBestSlotsForSection(section);
-    if (best.length === 0) { alert('No hay slots disponibles'); return; }
-    setSelectedSection(section);
-    const top = best[0];
-    const ts = timeslots.find(t => t.id === top.slotId);
-    alert(`Opción recomendada: ${days[top.dayOfWeek - 1]} ${ts?.label} (Sec ${top.parallelIndex})`);
-  };
 
-  const getTeacherHours = (teacherName: string | null): number => {
-    if (!teacherName || !Array.isArray(assignments)) return 0;
-    // Count assignments and multiply by 1.5 (average hours per slot)
-    const slotCount = assignments.filter(a => a && a.teacher_name?.trim() === teacherName.trim()).length;
-    return Math.round(slotCount * 1.5);
-  };
+    if (!sectionToAssign) return;
 
-  // Get teacher object by name (from imported or create temporary)
-  const getTeacherByName = (name: string) => {
-    const found = teachers.find(t => t.nombre === name);
-    if (found) return found;
-    // Return a default object if not found in imported teachers
-    return { id: `temp-${name}`, nombre: name, email: '', max_horas: 20 };
-  };
-
-  // Check if a teacher has blocked availability for a specific slot
-  const isTeacherBlockedForSlot = (teacherName: string, slotId: string, dayOfWeek: number): boolean => {
-    const teacher = teachers.find(t => t.nombre === teacherName);
-    if (!teacher?.availability) return false;
-    return teacher.availability[`${slotId}-${dayOfWeek}`] === 'blocked';
-  };
-
-  // Count how many blocked slots a teacher has for currently assigned section slots
-  const getTeacherBlockedSlots = (teacherName: string, sectionId: string): { blocked: number; conflicts: Array<{ day: string; slot: string }> } => {
-    const sectionAssignments = assignments.filter(a => a.section_id === sectionId);
-    const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
-    const conflicts: Array<{ day: string; slot: string }> = [];
-
-    sectionAssignments.forEach(a => {
-      if (isTeacherBlockedForSlot(teacherName, a.timeslot_id, a.day_of_week)) {
-        conflicts.push({ day: days[a.day_of_week - 1], slot: a.timeslot_label });
-      }
+    setRoomSelectorData({
+      section: sectionToAssign,
+      timeslotId,
+      dayOfWeek,
+      parallelIndex,
     });
-
-    return { blocked: conflicts.length, conflicts };
   };
 
-  const autoAssignSection = (section: Section) => {
-    const best = getBestSlotsForSection(section);
-    if (best.length === 0) return false;
-    const top = best[0];
-    const ts = timeslots.find(t => t.id === top.slotId);
-    if (!ts) return false;
+  const handleConfirmRoomAssignment = async (roomId: string) => {
+    if (!roomSelectorData || !selectedPeriod) return;
+    const { section, timeslotId, dayOfWeek } = roomSelectorData;
 
-    const newAssignment: Assignment = {
-      id: `asg-${Date.now()}-${Math.random()}`,
-      section_id: section.id,
-      nrc: section.nrc,
-      subject_name: section.subject_name,
-      subject_code: section.subject_code,
-      level: section.level,
-      teacher_name: section.teacher_name,
-      room_name: section.type === 'LAB' ? 'LAB 1' : 'SALA 204',
-      room_type: section.type,
-      timeslot_id: top.slotId,
-      timeslot_label: ts.label,
-      day_of_week: top.dayOfWeek,
-      parallel_index: top.parallelIndex
-    };
-
-    setAssignments(prev => [...prev, newAssignment]);
-    setSections(prev => prev.map(s => s.id === section.id ? { ...s, assigned_slots: s.assigned_slots + 1 } : s));
-    setHasChanges(true);
-    return true;
-  };
-
-  const autoAssignAll = async () => {
-    if (dataStore.getAuthToken()) {
+    try {
       setSaving(true);
-      let count = 0;
-      try {
-        const ordered = [...unassignedSections].sort((a, b) => calculateDifficultyScore(b) - calculateDifficultyScore(a));
-        for (const section of ordered) {
-          const remaining = Math.max(0, section.hours_per_week - section.assigned_slots);
-          for (let index = 0; index < remaining; index++) {
-            const [top] = await api.getSlotScores(section.id, selectedPeriod);
-            if (!top) break;
-            await api.assignSection({
-              section_id: section.id,
-              room_id: top.room_id,
-              timeslot_id: top.timeslot_id,
-              day_of_week: top.day_of_week,
-              period_id: selectedPeriod,
-            });
-            count++;
-          }
+      setError(null);
+      if (dataStore.getAuthToken()) {
+        const res = await api.assignSection({
+          section_id: section.id,
+          room_id: roomId,
+          timeslot_id: timeslotId,
+          day_of_week: dayOfWeek,
+          period_id: selectedPeriod,
+        });
+
+        if (res.warnings && res.warnings.length > 0) {
+          setNotice({ type: 'info', message: `Asignado con advertencias: ${res.warnings[0].description}` });
+        } else {
+          setNotice({ type: 'success', message: `NRC ${section.nrc} asignado exitosamente` });
         }
         await loadScheduleData();
-        alert(`✅ Auto-asignados y sincronizados: ${count} bloques`);
-      } catch (autoError) {
-        await loadScheduleData();
-        setError(autoError instanceof Error ? autoError.message : 'La auto-asignación no pudo completarse');
-      } finally {
-        setSaving(false);
-      }
-      return;
-    }
-    if (!OFFLINE_DEMO_ENABLED) {
-      setError('La sesión expiró. Vuelve a iniciar sesión.');
-      return;
-    }
-    let count = 0;
-    unassignedSections.filter(s => {
-      const best = getBestSlotsForSection(s);
-      return best.length > 0 && best[0].score >= 100;
-    }).forEach(section => {
-      const remaining = section.hours_per_week - section.assigned_slots;
-      for (let i = 0; i < remaining; i++) {
-        if (autoAssignSection(section)) count++;
-      }
-    });
-    alert(`✅ Auto-asignados: ${count} slots`);
-  };
-
-  const resolveConflict = async (conflict: Conflict) => {
-    if (dataStore.getAuthToken() && conflict.id) {
-      try {
-        await api.resolveConflict(conflict.id, true);
-        await loadScheduleData();
-        setSelectedConflict(null);
-        return;
-      } catch (resolveError) {
-        setError(resolveError instanceof Error ? resolveError.message : 'No fue posible resolver el conflicto');
-        return;
-      }
-    }
-    const section = sections.find(s => s.nrc === conflict.nrc);
-    if (!section) return;
-    const alternatives = getBestSlotsForSection(section);
-    if (alternatives.length === 0) return;
-    const top = alternatives[0];
-    const ts = timeslots.find(t => t.id === top.slotId);
-    if (!ts) return;
-
-    setAssignments(prev => {
-      const filtered = prev.filter(a =>
-        a.nrc !== conflict.nrc ||
-        a.timeslot_label !== conflict.timeslot_label ||
-        a.day_of_week !== conflict.day_of_week ||
-        a.parallel_index !== conflict.parallel_index
-      );
-      return [...filtered, {
-        id: `asg-${Date.now()}`,
-        section_id: section.id,
-        nrc: section.nrc,
-        subject_name: section.subject_name,
-        subject_code: section.subject_code,
-        level: section.level,
-        teacher_name: section.teacher_name,
-        room_name: 'SALA 204',
-        room_type: section.type,
-        timeslot_id: top.slotId,
-        timeslot_label: ts.label,
-        day_of_week: top.dayOfWeek,
-        parallel_index: top.parallelIndex
-      } as Assignment];
-    });
-    setConflicts(prev => prev.filter(c => c.id !== conflict.id));
-    setHasChanges(true);
-    setSelectedConflict(null);
-  };
-
-  const resolveAllConflicts = async () => {
-    if (!dataStore.getAuthToken()) {
-      for (const conflict of [...conflicts]) await resolveConflict(conflict);
-      return;
-    }
-    setSaving(true);
-    try {
-      for (const conflict of conflicts) await api.resolveConflict(conflict.id, true);
-      await loadScheduleData();
-    } catch (resolveError) {
-      setError(resolveError instanceof Error ? resolveError.message : 'No fue posible resolver todos los conflictos');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
-  const criticalCount = conflicts.filter(c => c.type === 'CRITICAL').length;
-  const warningCount = conflicts.filter(c => c.type === 'WARNING').length;
-  const healthPercent = metrics?.health_score ?? 0;
-
-  // Save handler
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const token = dataStore.getAuthToken();
-      if (token) {
-        // Online: Already saved immediately! Just reload to confirm sync.
-        await loadScheduleData();
-        setHasChanges(false);
-        alert('✅ Todos los cambios están sincronizados con la nube (Cloudflare D1).');
-      } else if (OFFLINE_DEMO_ENABLED) {
-        // Offline: Explicitly confirm local storage
-        localStorage.setItem(`scheduler_assignments_${selectedPeriod}`, JSON.stringify(assignments));
-        localStorage.setItem(`scheduler_conflicts_${selectedPeriod}`, JSON.stringify(conflicts));
-        setHasChanges(false);
-        alert('💾 Horario guardado localmente en el navegador.');
       } else {
-        throw new Error('La sesión expiró. Vuelve a iniciar sesión.');
+        const room = availableRooms.find(r => r.id === roomId);
+        const newAsg: Assignment = {
+          id: `asg-${Date.now()}`,
+          section_id: section.id,
+          room_id: roomId,
+          timeslot_id: timeslotId,
+          day_of_week: dayOfWeek,
+          period_id: selectedPeriod,
+          parallel_index: 0,
+          nrc: section.nrc,
+          subject_code: section.subject_code,
+          subject_name: section.subject_name,
+          level: section.level,
+          section_type: section.type,
+          teacher_name: section.teacher_name,
+          room_name: room?.name || null,
+          room_type: room?.type || 'TEO',
+          timeslot_label: timeslots.find(t => t.id === timeslotId)?.label || '',
+        };
+        setAssignments(prev => [...prev, newAsg]);
+        setHasChanges(true);
       }
+      addAuditEntry('assign', `Asignado NRC ${section.nrc} a día ${dayOfWeek}`);
     } catch (err) {
-      console.error('Error saving:', err);
-      alert('⚠️ Error al guardar.');
+      setError(err instanceof Error ? err.message : 'Error al asignar la sección');
     } finally {
       setSaving(false);
+      setRoomSelectorData(null);
     }
   };
 
-  // Export to CSV
-  const exportToCSV = () => {
-    const headers = ['NRC', 'Asignatura', 'Código', 'Nivel', 'Docente', 'Sala', 'Día', 'Bloque', 'Paralelo'];
-    const rows = assignments.map(a => [
-      a.nrc, a.subject_name, a.subject_code, a.level.toString(), a.teacher_name || '', a.room_name || '', days[a.day_of_week - 1], a.timeslot_label, String.fromCharCode(65 + a.parallel_index)
-    ]);
-    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `horario_${selectedPeriod}_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-
-    addAuditEntry('save', `Exportado horario a CSV (${assignments.length} asignaciones)`);
-    setShowExportModal(false);
-  };
-
-  // Export to PDF
-  const exportToPDF = async () => {
-    const element = document.getElementById('scheduler-calendar-view');
-    if (!element) return;
-
+  // Auto assign solver handler
+  const handleAutoAssign = async () => {
+    if (!sections.length || !selectedPeriod) return;
     setSaving(true);
+    setNotice(null);
+    const queue = buildPrioritizedAssignmentQueue(sections);
+    let completed = 0;
+    let failed = 0;
+
+    for (const sectionId of queue) {
+      try {
+        const scores = await api.getSlotScores(sectionId, selectedPeriod);
+        const best = scores.find(score => !score.blocked);
+        if (!best) {
+          failed++;
+        } else {
+          await api.assignSection({
+            section_id: sectionId,
+            room_id: best.room_id,
+            timeslot_id: best.timeslot_id,
+            day_of_week: best.day_of_week,
+            period_id: selectedPeriod,
+          });
+          completed++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+
+    await loadScheduleData();
+    setSaving(false);
+    setNotice({
+      type: failed ? 'info' : 'success',
+      message: failed
+        ? `Propuesta generada: ${completed} bloques asignados (${failed} requieren ajuste manual)`
+        : `Propuesta automática completada: ${completed} bloques asignados exitosamente`,
+    });
+    addAuditEntry('auto-assign', `Generada propuesta automática: ${completed} bloques ubicados`);
+  };
+
+  // Edit Assignment Modal handlers
+  const handleEditAssignment = (assignment: Assignment) => {
+    setEditingAssignment(assignment);
+  };
+
+  const handleSaveAssignment = async (assignmentId: string, data: { room_name: string; teacher_name: string }) => {
     try {
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-      // Create canvas from DOM element
-      const canvas = await html2canvas(element, {
-        scale: 2, // higher quality
-        useCORS: true,
-        backgroundColor: document.documentElement.classList.contains('dark') ? '#0b0e14' : '#ffffff',
-      });
+      const room = availableRooms.find(r => r.name === data.room_name);
+      const teacher = teachers.find(t => t.nombre === data.teacher_name);
 
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('landscape', 'mm', 'a3');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      pdf.text(`Horario Planificador - Período ${selectedPeriod}`, 15, 15);
-      pdf.addImage(imgData, 'PNG', 10, 25, pdfWidth - 20, pdfHeight - 20);
-      pdf.save(`horario_${selectedPeriod}_${new Date().toISOString().split('T')[0]}.pdf`);
-
-      addAuditEntry('save', `Exportado horario a PDF (${assignments.length} asignaciones)`);
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      alert('Error al generar el PDF. Por favor, intente de nuevo.');
-    } finally {
-      setSaving(false);
-      setShowExportModal(false);
+      if (dataStore.getAuthToken()) {
+        await api.updateAssignment(assignmentId, {
+          room_id: room?.id,
+          teacher_id: teacher?.id,
+        });
+        await loadScheduleData();
+      } else {
+        setAssignments(prev => prev.map(a =>
+          a.id === assignmentId ? { ...a, room_name: data.room_name, teacher_name: data.teacher_name } : a
+        ));
+        setHasChanges(true);
+      }
+      addAuditEntry('update', `Modificada asignación ${assignmentId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al actualizar');
     }
   };
 
-  // Export handler
-  const handleExport = () => {
-    setShowExportModal(true);
+  const handleDeleteAssignment = async (assignmentId: string) => {
+    try {
+      if (dataStore.getAuthToken()) {
+        await api.deleteAssignment(assignmentId);
+        await loadScheduleData();
+      } else {
+        setAssignments(prev => prev.filter(a => a.id !== assignmentId));
+        setHasChanges(true);
+      }
+      addAuditEntry('delete', `Desasignada clase ${assignmentId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al eliminar');
+    }
+  };
+
+  // Section Modal (Backlog CRUD) handlers
+  const handleOpenSectionModal = (section?: Section) => {
+    setEditingSection(section || null);
+    setIsSectionModalOpen(true);
+  };
+
+  const handleSaveSection = async (formData: {
+    id?: string;
+    nrc: string;
+    subject_id: string;
+    type: string;
+    hours_per_week: number;
+    level: number;
+    teacher_name: string;
+    parent_section_id: string;
+  }) => {
+    try {
+      const teacher = teachers.find(t => t.nombre === formData.teacher_name);
+
+      if (formData.id) {
+        if (dataStore.getAuthToken()) {
+          await api.updateSection(formData.id, {
+            subject_id: formData.subject_id,
+            teacher_id: teacher?.id || null,
+            nrc: formData.nrc,
+            type: formData.type,
+            parent_section_id: formData.parent_section_id || null,
+            hours_per_week: formData.hours_per_week,
+          });
+        }
+      } else {
+        if (dataStore.getAuthToken() && selectedPeriod) {
+          await api.createSection({
+            period_id: selectedPeriod,
+            subject_id: formData.subject_id,
+            teacher_id: teacher?.id || null,
+            nrc: formData.nrc,
+            type: formData.type,
+            parent_section_id: formData.parent_section_id || null,
+            hours_per_week: formData.hours_per_week,
+          });
+        }
+      }
+      await loadScheduleData();
+      addAuditEntry('save_section', `Guardada sección NRC ${formData.nrc}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al guardar sección');
+    }
+  };
+
+  const handleDeleteSection = async (sectionId: string) => {
+    try {
+      if (dataStore.getAuthToken()) {
+        await api.deleteSection(sectionId);
+        await loadScheduleData();
+      }
+      addAuditEntry('delete_section', `Eliminada sección ${sectionId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al eliminar sección');
+    }
   };
 
   // Publish handler
   const handlePublish = async () => {
+    const criticalCount = conflicts.filter(c => c.type === 'CRITICAL').length;
     if (criticalCount > 0) {
-      alert('No se puede publicar: hay conflictos críticos pendientes');
+      alert('No se puede publicar: existen conflictos críticos sin resolver.');
       return;
     }
     try {
-      if (dataStore.getAuthToken()) await api.publishSchedule(selectedPeriod);
+      if (dataStore.getAuthToken() && selectedPeriod) {
+        await api.publishSchedule(selectedPeriod);
+      }
       setScheduleStatus('published');
-      addAuditEntry('publish', `Horario ${selectedPeriod} publicado oficialmente`);
-      alert('✅ Horario publicado exitosamente');
-    } catch (publishError) {
-      setError(publishError instanceof Error ? publishError.message : 'No fue posible publicar el horario');
+      setNotice({ type: 'success', message: 'Horario publicado exitosamente' });
+      addAuditEntry('publish', `Publicado horario del período ${selectedPeriod}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No fue posible publicar');
     }
   };
 
+  // PDF Export
+  const handleExportPdf = async () => {
+    if (!gridContainerRef.current) return;
+    const canvas = await html2canvas(gridContainerRef.current, { scale: 2 });
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF('landscape', 'mm', 'a3');
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+    pdf.text(`Planificación Académica - ${periods.find(p => p.id === selectedPeriod)?.name || selectedPeriod}`, 15, 15);
+    pdf.addImage(imgData, 'PNG', 10, 25, pdfWidth - 20, pdfHeight - 20);
+    pdf.save(`horario_${selectedPeriod}_${new Date().toISOString().split('T')[0]}.pdf`);
+    addAuditEntry('export_pdf', `Exportado documento PDF del horario`);
+  };
+
+  const totalRequired = useMemo(() => sections.reduce((acc, s) => acc + Number(s.hours_per_week || 0), 0), [sections]);
+  const canPublish = totalRequired > 0 && assignments.length >= totalRequired && conflicts.filter(c => c.type === 'CRITICAL').length === 0;
+
   return (
-    <div className="bg-[#f8fafc] dark:bg-[#0b0e11] text-slate-800 dark:text-slate-200 font-display h-screen flex flex-col overflow-hidden selection:bg-primary/20">
-      {/* Top Main Header */}
-      <header className="h-14 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111418] flex items-center justify-between px-4 shrink-0 z-50 relative">
-        <div className="flex items-center gap-4">
-          <Link to="/scheduler" className="flex items-center gap-2 text-[#0f172a] dark:text-white">
-            <div className="bg-primary p-1 rounded">
-              <span className="material-symbols-outlined text-white text-xl">calendar_today</span>
-            </div>
-            <h1 className="text-base font-bold tracking-tight">Scheduler Pro</h1>
-          </Link>
-
-          <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
-
-          {/* Period Selector Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowPeriodDropdown(!showPeriodDropdown)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
-            >
-              <span className="material-symbols-outlined text-[16px]">calendar_month</span>
-              <span>{periods.find(period => period.id === selectedPeriod)?.code || selectedPeriod}</span>
-              <span className="material-symbols-outlined text-[16px]">expand_more</span>
+    <MainLayout
+      title="Planificador"
+      selectedPeriod={selectedPeriod}
+      onPeriodChange={setSelectedPeriod}
+      showPeriodSelector={false}
+    >
+      <div className="h-[calc(100vh-140px)] flex flex-col overflow-hidden -m-6">
+        {/* Notice alert */}
+        {notice && (
+          <div className={`px-6 py-2.5 text-xs font-semibold flex items-center justify-between ${
+            notice.type === 'success' ? 'bg-emerald-500 text-white' : notice.type === 'error' ? 'bg-rose-500 text-white' : 'bg-blue-500 text-white'
+          }`}>
+            <span>{notice.message}</span>
+            <button type="button" onClick={() => setNotice(null)} className="hover:opacity-80">
+              <span className="material-symbols-outlined text-sm">close</span>
             </button>
-
-            {showPeriodDropdown && (
-              <div className="absolute top-full left-0 mt-1 w-64 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden z-50">
-                <div className="p-2 border-b border-slate-100 dark:border-slate-800">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase px-2">Períodos Académicos</p>
-                </div>
-                {periods.map(period => (
-                  <button
-                    key={period.id}
-                    onClick={() => { setSelectedPeriod(period.id); setShowPeriodDropdown(false); }}
-                    className={`w-full flex items-center justify-between gap-2 px-4 py-2.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-all ${selectedPeriod === period.id ? 'bg-primary/5 text-primary' : 'text-slate-700 dark:text-slate-300'}`}
-                  >
-                    <span className="font-medium">{period.name}</span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${period.status === 'published' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                      period.status === 'active' ? 'bg-primary/10 text-primary' :
-                        'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                      }`}>
-                      {period.status === 'published' ? 'Publicado' : period.status === 'active' ? 'Activo' : 'Borrador'}
-                    </span>
-                  </button>
-                ))}
-                <div className="p-2 border-t border-slate-100 dark:border-slate-800">
-                  <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-primary hover:bg-primary/5 rounded-lg transition-all">
-                    <span className="material-symbols-outlined text-[18px]">add</span>
-                    Crear Nuevo Período
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
+        )}
 
-          {/* Status Badge */}
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-white text-[11px] font-bold ${statusLabels[scheduleStatus].color}`}>
-            <span className="material-symbols-outlined text-[14px]">{statusLabels[scheduleStatus].icon}</span>
-            {statusLabels[scheduleStatus].label}
+        {/* Error alert */}
+        {error && (
+          <div className="px-6 py-2.5 text-xs font-semibold bg-rose-600 text-white flex items-center justify-between">
+            <span>{error}</span>
+            <button type="button" onClick={() => setError(null)} className="hover:opacity-80">
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
           </div>
-        </div>
+        )}
 
+        {/* Header Toolbar */}
+        <SchedulerHeader
+          periods={periods}
+          selectedPeriod={selectedPeriod}
+          onSelectPeriod={setSelectedPeriod}
+          scheduleStatus={scheduleStatus}
+          viewMode={viewMode}
+          onChangeViewMode={setViewMode}
+          selectedViewLevel={selectedViewLevel}
+          onChangeViewLevel={setSelectedViewLevel}
+          selectedViewRoom={selectedViewRoom}
+          onChangeViewRoom={setSelectedViewRoom}
+          availableRooms={availableRooms}
+          selectedViewTeacher={selectedViewTeacher}
+          onChangeViewTeacher={setSelectedViewTeacher}
+          availableTeachers={availableTeachersList}
+          onAutoAssign={handleAutoAssign}
+          onPublish={handlePublish}
+          onOpenExport={() => setShowExportModal(true)}
+          onOpenAudit={() => setShowAuditPanel(true)}
+          onSaveDraft={() => setHasChanges(false)}
+          saving={saving}
+          hasChanges={hasChanges}
+          canPublish={canPublish}
+        />
 
-        <div className="flex items-center gap-2">
-          {/* Conflict counters - clickable to open panel */}
-          <button
-            onClick={() => setShowConflictsPanel(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400 text-xs font-bold hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
-          >
-            <span className="material-symbols-outlined text-[14px]">error</span>
-            {criticalCount}
-          </button>
-          <button
-            onClick={() => setShowConflictsPanel(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 text-amber-600 dark:text-amber-400 text-xs font-bold hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
-          >
-            <span className="material-symbols-outlined text-[14px]">warning</span>
-            {warningCount}
-          </button>
+        {/* Health Stats & Conflict Badges */}
+        <SchedulerStats
+          metrics={metrics}
+          conflicts={conflicts}
+          onOpenConflictsPanel={() => setShowConflictsPanel(true)}
+        />
 
-          <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
-
-          {/* Action Buttons */}
-          <button
-            onClick={handleSave}
-            disabled={!hasChanges || saving}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${hasChanges
-              ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
-              : 'bg-slate-50 dark:bg-slate-900 text-slate-400 cursor-not-allowed'
-              }`}
-          >
-            {saving ? (
-              <div className="animate-spin size-3 border border-slate-400 border-t-transparent rounded-full"></div>
-            ) : (
-              <span className="material-symbols-outlined text-[16px]">save</span>
-            )}
-            Guardar
-          </button>
-
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700"
-          >
-            <span className="material-symbols-outlined text-[16px]">download</span>
-            Exportar
-          </button>
-
-          <button
-            onClick={handlePublish}
-            disabled={scheduleStatus === 'published'}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${scheduleStatus === 'published'
-              ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 cursor-default'
-              : 'bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/20'
-              }`}
-          >
-            <span className="material-symbols-outlined text-[16px]">{scheduleStatus === 'published' ? 'check_circle' : 'publish'}</span>
-            {scheduleStatus === 'published' ? 'Publicado' : 'Publicar'}
-          </button>
-
-          <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
-
-          <button
-            onClick={() => setShowAuditPanel(true)}
-            className="flex items-center gap-1.5 p-1.5 rounded-lg text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-            title="Historial de cambios"
-          >
-            <span className="material-symbols-outlined text-[20px]">history</span>
-          </button>
-        </div>
-      </header>
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Main Left Sidebar - with navigation links */}
-        <nav className={`${sidebarCollapsed ? 'w-16' : 'w-56'} bg-white dark:bg-[#111418] border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 py-6 z-40 overflow-y-auto transition-all duration-300`}>
-          {/* Collapse toggle button */}
-          <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="absolute top-20 -right-3 z-50 size-6 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-md flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-            style={{ left: sidebarCollapsed ? '52px' : '212px' }}
-          >
-            <span className="material-symbols-outlined text-[14px] text-slate-500">
-              {sidebarCollapsed ? 'chevron_right' : 'chevron_left'}
-            </span>
-          </button>
-          <div className={`${sidebarCollapsed ? 'px-2' : 'px-6'} mb-4`}>
-            {!sidebarCollapsed && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Principal</p>}
-          </div>
-          <ul className={`space-y-1 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
-            {mainNavItems.map(item => (
-              <li key={item.name}>
-                <Link
-                  to={item.path}
-                  className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'} gap-3 ${sidebarCollapsed ? 'px-2 py-2.5' : 'px-4 py-2.5'} text-sm font-semibold rounded-xl transition-all group ${location.pathname === item.path
-                    ? 'bg-white dark:bg-slate-800 text-primary border border-slate-100 dark:border-slate-700 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/5'
-                    }`}
-                  title={sidebarCollapsed ? item.name : undefined}
-                >
-                  <div className={`flex items-center ${sidebarCollapsed ? '' : 'gap-3'}`}>
-                    <span className={`material-symbols-outlined text-[20px] ${location.pathname === item.path ? 'fill-1' : ''}`}>{item.icon}</span>
-                    {!sidebarCollapsed && item.name}
-                  </div>
-                  {item.badge && !sidebarCollapsed && <div className="size-2 rounded-full bg-red-500 ring-2 ring-red-500/20"></div>}
-                  {item.badge && sidebarCollapsed && <div className="absolute top-0 right-0 size-2 rounded-full bg-red-500"></div>}
-                </Link>
-              </li>
-            ))}
-          </ul>
-
-          <div className={`${sidebarCollapsed ? 'px-2' : 'px-6'} mt-8 mb-4`}>
-            {!sidebarCollapsed && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Maestros</p>}
-          </div>
-          <ul className={`space-y-1 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
-            {masterNavItems.map(item => (
-              <li key={item.name}>
-                <Link
-                  to={item.path}
-                  className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center' : ''} gap-3 ${sidebarCollapsed ? 'px-2 py-2.5' : 'px-4 py-2.5'} text-sm font-semibold rounded-xl transition-all group ${location.pathname === item.path
-                    ? 'bg-white dark:bg-slate-800 text-primary border border-slate-100 dark:border-slate-700 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/5'
-                    }`}
-                  title={sidebarCollapsed ? item.name : undefined}
-                >
-                  <span className={`material-symbols-outlined text-[20px] ${location.pathname === item.path ? 'fill-1' : ''}`}>{item.icon}</span>
-                  {!sidebarCollapsed && item.name}
-                </Link>
-              </li>
-            ))}
-          </ul>
-
-          <div className={`${sidebarCollapsed ? 'px-2' : 'px-6'} mt-8 mb-4`}>
-            {!sidebarCollapsed && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sistema</p>}
-          </div>
-          <ul className={`space-y-1 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
-            <li>
-              <Link
-                to="/upload"
-                className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center' : ''} gap-3 ${sidebarCollapsed ? 'px-2 py-2.5' : 'px-4 py-2.5'} text-sm font-semibold rounded-xl transition-all ${location.pathname === '/upload'
-                  ? 'bg-white dark:bg-slate-800 text-primary border border-slate-100 dark:border-slate-700 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/5'
-                  }`}
-                title={sidebarCollapsed ? 'Importar Datos' : undefined}
-              >
-                <span className={`material-symbols-outlined text-[20px] ${location.pathname === '/upload' ? 'fill-1' : ''}`}>upload_file</span>
-                {!sidebarCollapsed && 'Importar Datos'}
-              </Link>
-            </li>
-          </ul>
-
-          <div className={`mt-auto ${sidebarCollapsed ? 'px-2' : 'px-4'}`}>
-            <Link
-              to="/configuracion"
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center' : ''} gap-3 ${sidebarCollapsed ? 'px-2 py-2.5' : 'px-4 py-2.5'} text-sm font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all`}
-              title={sidebarCollapsed ? 'Configuración' : undefined}
-            >
-              <span className="material-symbols-outlined text-[20px]">settings</span>
-              {!sidebarCollapsed && 'Configuración'}
-            </Link>
-            <Link
-              to="/"
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center' : ''} gap-3 ${sidebarCollapsed ? 'px-2 py-2.5' : 'px-4 py-2.5'} text-sm font-semibold text-slate-500 hover:text-red-500 transition-all`}
-              title={sidebarCollapsed ? 'Cerrar Sesión' : undefined}
-            >
-              <span className="material-symbols-outlined text-[20px]">logout</span>
-              {!sidebarCollapsed && 'Cerrar Sesión'}
-            </Link>
-          </div>
-        </nav>
-
-        {/* Content Area */}
+        {/* Main Planning Area: Sidebar + Grid */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Por Asignar Panel */}
-          <aside className="w-72 bg-[#fcfdfe] dark:bg-[#0f141a] border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0">
-            <div className="flex border-b border-slate-100 dark:border-slate-800 shrink-0">
-              <button
-                onClick={() => setSidebarTab('secciones')}
-                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest transition-all ${sidebarTab === 'secciones'
-                  ? 'text-primary border-b-2 border-primary bg-primary/5'
-                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-              >
-                Secciones ({unassignedSections.length})
-              </button>
-              <button
-                onClick={() => setSidebarTab('docentes')}
-                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest transition-all ${sidebarTab === 'docentes'
-                  ? 'text-primary border-b-2 border-primary bg-primary/5'
-                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-              >
-                Carga Docente
-              </button>
-            </div>
+          {/* Backlog Sidebar */}
+          <SchedulerSidebar
+            sections={sections}
+            teachers={teachers}
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onOpenSectionModal={handleOpenSectionModal}
+            onTeacherSelect={(name) => {
+              setViewMode('docente');
+              setSelectedViewTeacher(name);
+            }}
+          />
 
-            <div className="flex-1 overflow-y-auto px-4 pb-6 custom-scrollbar">
-              {sidebarTab === 'secciones' ? (
-                <>
-                  <div className="py-4 flex items-center justify-between">
-                    <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      Pendientes de asignar
-                    </h2>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => openEditSectionModal()}
-                        className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                        title="Nueva Sección / NRC"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">add</span>
-                      </button>
-                      <button
-                        onClick={autoAssignAll}
-                        className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
-                        title="Auto-asignar todos"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">auto_fix_high</span>
-                      </button>
-                    </div>
-                  </div>
-                  {loading ? (
-                    <div className="flex items-center justify-center py-8">
-                      <div className="animate-spin size-6 border-2 border-primary border-t-transparent rounded-full"></div>
-                    </div>
-                  ) : (
-                    Object.entries(sectionsByLevel).sort(([a], [b]) => Number(b) - Number(a)).map(([level, levelSections]) => (
-                      <div key={level} className="mb-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className={`size-2 rounded-full ${Number(level) >= 3 ? 'bg-emerald-500' : 'bg-primary'}`}></div>
-                          <p className={`text-[10px] font-black uppercase tracking-widest ${Number(level) >= 3 ? 'text-emerald-600' : 'text-primary'}`}>
-                            Nivel {level} {Number(level) >= 3 ? '- Prioridad Alta' : ''}
-                          </p>
-                        </div>
-
-                        {levelSections.map((section, idx) => (
-                          <div
-                            key={section.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, section)}
-                            onDragEnd={handleDragEnd}
-                            onClick={() => setSelectedSection(selectedSection?.id === section.id ? null : section)}
-                            className={`bg-white dark:bg-slate-800 rounded-xl border p-4 shadow-sm mb-4 relative cursor-grab active:cursor-grabbing transition-all ${section.parent_section_id ? 'ml-4 border-l-4 border-l-cyan-400' : ''} ${selectedSection?.id === section.id
-                              ? 'border-2 border-primary shadow-lg shadow-primary/5'
-                              : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
-                              } ${draggingSection?.id === section.id ? 'opacity-50 scale-95' : ''}`}
-                          >
-                            {section.priority === 2 && (
-                              <span className="material-symbols-outlined absolute top-2 right-2 text-amber-500 text-sm animate-pulse">local_fire_department</span>
-                            )}
-                            {section.priority === 1 && (
-                              <span className="material-symbols-outlined absolute top-2 right-2 text-amber-500 text-sm">warning</span>
-                            )}
-                            <h3 className="text-xs font-black text-slate-900 dark:text-white mb-1">{section.subject_name}</h3>
-                            <p className="text-[10px] text-slate-500 font-medium mb-2">NRC {section.nrc} • {section.hours_per_week} HRS</p>
-                            {section.parent_section_id && (
-                              <p className="mb-2 flex items-center gap-1 text-[9px] font-bold text-cyan-700 dark:text-cyan-300">
-                                <span className="material-symbols-outlined text-[12px]">account_tree</span>
-                                Práctica de TEO NRC {section.parent_nrc || 'sin identificar'} · puede coincidir con sus hermanas
-                              </p>
-                            )}
-
-                            {/* Difficulty indicator */}
-                            {(() => {
-                              const difficulty = calculateDifficultyScore(section);
-                              const difficultyLevel = difficulty >= 80 ? 'hard' : difficulty >= 50 ? 'medium' : 'easy';
-                              const colors = {
-                                hard: { bg: 'bg-red-500', text: 'text-red-600', label: 'Difícil' },
-                                medium: { bg: 'bg-amber-500', text: 'text-amber-600', label: 'Medio' },
-                                easy: { bg: 'bg-emerald-500', text: 'text-emerald-600', label: 'Fácil' }
-                              };
-                              return (
-                                <div className="flex items-center gap-2 mb-3">
-                                  <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                    <div
-                                      className={`h-full ${colors[difficultyLevel].bg} rounded-full transition-all`}
-                                      style={{ width: `${Math.min(100, difficulty)}%` }}
-                                    />
-                                  </div>
-                                  <span className={`text-[9px] font-bold ${colors[difficultyLevel].text}`}>
-                                    {colors[difficultyLevel].label}
-                                  </span>
-                                </div>
-                              );
-                            })()}
-
-                            <div className="flex flex-wrap gap-1.5 mb-3">
-                              <span className="px-2 py-0.5 rounded bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 text-[9px] font-bold text-slate-500 uppercase">
-                                {section.type}
-                              </span>
-                              {section.type === 'LAB' && (
-                                <span className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/40 text-[9px] font-bold text-amber-600 uppercase">Sala Especial</span>
-                              )}
-                              {section.type === 'SIM' && (
-                                <span className="px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-900/40 text-[9px] font-bold text-purple-600 uppercase">Simulador</span>
-                              )}
-                            </div>
-
-                            {/* Action buttons */}
-                            <div className="flex gap-1.5 mb-3 flex-wrap">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); suggestSlotForSection(section); }}
-                                className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[9px] font-bold rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
-                              >
-                                <span className="material-symbols-outlined text-[12px]">lightbulb</span>
-                                Sugerir
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); autoAssignSection(section); }}
-                                className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 text-[9px] font-bold rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
-                              >
-                                <span className="material-symbols-outlined text-[12px]">bolt</span>
-                                Auto
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); openEditSectionModal(section); }}
-                                className="flex items-center justify-center gap-1 p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[9px] font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                                title="Editar Sección"
-                              >
-                                <span className="material-symbols-outlined text-[12px]">edit</span>
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDeleteSection(section.id, section.subject_name); }}
-                                className="flex items-center justify-center p-1.5 bg-red-50 dark:bg-red-950/20 text-red-500 rounded-lg hover:bg-red-100 transition-colors shrink-0"
-                                title="Eliminar Sección"
-                              >
-                                <span className="material-symbols-outlined text-[12px]">delete</span>
-                              </button>
-                            </div>
-
-                            {/* Association Info */}
-                            <div className="pt-3 border-t border-slate-100 dark:border-slate-700 space-y-2">
-                              {/* Teacher - Dropdown Selector */}
-                              <div className="relative">
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setTeacherDropdownOpen(teacherDropdownOpen === section.id ? null : section.id); }}
-                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg border transition-all text-left ${section.teacher_name
-                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400'
-                                    : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 hover:border-amber-400'
-                                    }`}
-                                >
-                                  {section.teacher_name ? (
-                                    <>
-                                      <span className="material-symbols-outlined text-[14px] text-emerald-500">check_circle</span>
-                                      <div className="size-5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                                        <span className="material-symbols-outlined text-[12px] text-emerald-600">person</span>
-                                      </div>
-                                      <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 flex-1">{section.teacher_name}</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span className="material-symbols-outlined text-[14px] text-amber-500">warning</span>
-                                      <span className="text-[10px] font-medium text-amber-600 flex-1">Seleccionar docente...</span>
-                                    </>
-                                  )}
-                                  <span className="material-symbols-outlined text-[14px] text-slate-400">expand_more</span>
-                                </button>
-
-                                {/* Dropdown Menu */}
-                                {teacherDropdownOpen === section.id && (
-                                  <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 max-h-56 overflow-y-auto p-1.5 space-y-1">
-                                    <p className="text-[9px] font-bold text-slate-400 uppercase px-2 py-1">Seleccionar Docente</p>
-                                    {availableTeachers.map(teacherName => {
-                                      const teacher = getTeacherByName(teacherName);
-                                      const assigned = getTeacherHours(teacherName);
-                                      const max = teacher.max_horas || 20;
-                                      const isOver = assigned >= max;
-                                      const blockedInfo = getTeacherBlockedSlots(teacherName, section.id);
-                                      const hasConflicts = blockedInfo.blocked > 0;
-
-                                      return (
-                                        <button
-                                          key={teacherName}
-                                          onClick={(e) => { e.stopPropagation(); updateSectionTeacher(section.id, teacherName); }}
-                                          className={`w-full flex flex-col gap-1 px-3 py-2 rounded-lg text-left transition-all ${hasConflicts ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' : section.teacher_name === teacherName ? 'bg-primary/10 text-primary' : 'hover:bg-slate-50 dark:hover:bg-slate-700'
-                                            }`}
-                                        >
-                                          <div className="flex items-center gap-2">
-                                            <span className={`material-symbols-outlined text-[16px] ${hasConflicts ? 'text-red-500' : ''}`}>person</span>
-                                            <span className="text-[11px] font-bold">{teacherName}</span>
-                                            {hasConflicts && (
-                                              <span className="ml-auto px-1.5 py-0.5 bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 text-[8px] font-black rounded-full flex items-center gap-0.5">
-                                                <span className="material-symbols-outlined text-[10px]">warning</span>
-                                                {blockedInfo.blocked} conflicto{blockedInfo.blocked > 1 ? 's' : ''}
-                                              </span>
-                                            )}
-                                            {section.teacher_name === teacherName && !hasConflicts && (
-                                              <span className="material-symbols-outlined text-[14px] ml-auto">check</span>
-                                            )}
-                                          </div>
-                                          {hasConflicts && (
-                                            <div className="flex flex-wrap gap-1 pl-6 mt-1">
-                                              {blockedInfo.conflicts.map((c, i) => (
-                                                <span key={i} className="text-[8px] px-1 py-0.5 bg-red-200 dark:bg-red-800 text-red-700 dark:text-red-200 rounded">
-                                                  {c.day} {c.slot}
-                                                </span>
-                                              ))}
-                                            </div>
-                                          )}
-                                          <div className="flex items-center gap-2 pl-6">
-                                            <div className="h-1 flex-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                                              <div
-                                                className={`h-full ${isOver ? 'bg-red-500' : 'bg-emerald-500'}`}
-                                                style={{ width: `${Math.min(100, (assigned / max) * 100)}%` }}
-                                              />
-                                            </div>
-                                            <span className={`text-[8px] font-black ${isOver ? 'text-red-500' : 'text-slate-400'}`}>
-                                              {assigned}/{max}h
-                                            </span>
-                                          </div>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Type & Level indicators */}
-                              <div className="flex items-center gap-2 text-[9px]">
-                                <span className="flex items-center gap-1 text-slate-500">
-                                  <span className="material-symbols-outlined text-[12px]">school</span>
-                                  Nivel {section.level}
-                                </span>
-                                <span className="text-slate-300">•</span>
-                                <span className={`flex items-center gap-1 ${section.type === 'LAB' ? 'text-amber-600' : section.type === 'SIM' ? 'text-purple-600' : 'text-blue-600'}`}>
-                                  <span className="material-symbols-outlined text-[12px]">{section.type === 'LAB' ? 'science' : section.type === 'SIM' ? 'sports_esports' : 'menu_book'}</span>
-                                  {section.type}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ))
-                  )}
-
-                  {/* Assigned sections */}
-                  {sections.filter(s => s.assigned_slots >= s.hours_per_week).length > 0 && (
-                    <div className="mt-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="size-2 rounded-full bg-slate-300"></div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Asignados</p>
-                      </div>
-                      {sections.filter(s => s.assigned_slots >= s.hours_per_week).map(section => (
-                        <div key={section.id} className="bg-slate-50/50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-slate-800 p-4 opacity-50 mb-2">
-                          <div className="flex items-center justify-between mb-1">
-                            <h3 className="text-xs font-bold text-slate-400 line-through">{section.subject_name}</h3>
-                            <span className="material-symbols-outlined text-emerald-500 text-[16px] fill-1">check_circle</span>
-                          </div>
-                          <p className="text-[9px] text-slate-400 font-bold uppercase">NRC {section.nrc} • ASIGNADO</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="py-4 space-y-4">
-                  <div className="flex items-center justify-between px-1">
-                    <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      Control de Carga Docente
-                    </h2>
-                    <span className="text-[9px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
-                      {allAvailableTeachers.length} docentes
-                    </span>
-                  </div>
-
-                  {/* Summary Stats */}
-                  <div className="grid grid-cols-3 gap-2 px-1">
-                    <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-2 text-center">
-                      <p className="text-lg font-black text-emerald-600">{allAvailableTeachers.filter(t => getTeacherHours(t.nombre) < (t.max_horas || 20) * 0.8).length}</p>
-                      <p className="text-[8px] font-bold text-emerald-600/70 uppercase">Óptimo</p>
-                    </div>
-                    <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2 text-center">
-                      <p className="text-lg font-black text-amber-600">{allAvailableTeachers.filter(t => {
-                        const h = getTeacherHours(t.nombre);
-                        const m = t.max_horas || 20;
-                        return h >= m * 0.8 && h <= m;
-                      }).length}</p>
-                      <p className="text-[8px] font-bold text-amber-600/70 uppercase">Cerca</p>
-                    </div>
-                    <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-2 text-center">
-                      <p className="text-lg font-black text-red-600">{allAvailableTeachers.filter(t => getTeacherHours(t.nombre) > (t.max_horas || 20)).length}</p>
-                      <p className="text-[8px] font-bold text-red-600/70 uppercase">Sobrecarga</p>
-                    </div>
-                  </div>
-
-                  {allAvailableTeachers.length === 0 ? (
-                    <div className="text-center py-8">
-                      <span className="material-symbols-outlined text-slate-300 text-3xl mb-2">person_off</span>
-                      <p className="text-xs text-slate-500">No hay docentes cargados</p>
-                      <p className="text-[10px] text-slate-400 mt-1">Importa docentes desde la sección de datos</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {allAvailableTeachers.filter(t => t && t.nombre).map(teacher => {
-                        const assigned = getTeacherHours(teacher.nombre);
-                        const max = teacher.max_horas || 20;
-                        const percentage = Math.min(100, (assigned / Math.max(1, max)) * 100);
-                        const isOverloaded = assigned > max;
-                        const isNearLimit = assigned >= max * 0.8 && !isOverloaded;
-
-                        // Get teacher's assignments
-                        const teacherAssignments = Array.isArray(assignments) ? assignments.filter(a => a && a.teacher_name?.trim() === teacher.nombre?.trim()) : [];
-                        const cardDays = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi'];
-
-                        return (
-                          <div
-                            key={teacher.id}
-                            className={`rounded-xl border transition-all overflow-hidden ${selectedViewTeacher === teacher.nombre && viewMode === 'docente'
-                              ? 'bg-primary/5 border-primary shadow-md ring-1 ring-primary/20'
-                              : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 hover:border-slate-300 hover:shadow-sm'
-                              }`}
-                            onClick={() => {
-                              setViewMode('docente');
-                              setSelectedViewTeacher(teacher.nombre);
-                            }}
-                            style={{ cursor: 'pointer' }}
-                          >
-                            {/* Header */}
-                            <div className="p-3 border-b border-slate-100/50 dark:border-slate-700/50">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                  <div className={`size-9 rounded-full flex items-center justify-center font-bold text-xs shadow-sm ${isOverloaded ? 'bg-gradient-to-br from-red-400 to-red-600 text-white' : isNearLimit ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white' : 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white'
-                                    }`}>
-                                    {(teacher.nombre || '??').split(' ').filter(Boolean).map(n => n[0]).join('').substring(0, 2).toUpperCase()}
-                                  </div>
-                                  <div>
-                                    <p className="text-[11px] font-bold text-slate-900 dark:text-white leading-tight">{teacher.nombre}</p>
-                                    <p className="text-[9px] text-slate-500 font-medium">{teacher.tipo_contrato || 'Honorarios'}</p>
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <p className={`text-sm font-black ${isOverloaded ? 'text-red-500' : isNearLimit ? 'text-amber-500' : 'text-slate-700 dark:text-slate-300'}`}>
-                                    {assigned}<span className="text-[10px] font-bold text-slate-400">/{max}h</span>
-                                  </p>
-                                </div>
-                              </div>
-
-                              {/* Progress bar */}
-                              <div className="space-y-1">
-                                <div className="h-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                  <div
-                                    className={`h-full rounded-full transition-all duration-700 ease-out ${isOverloaded ? 'bg-gradient-to-r from-red-500 to-rose-600' : isNearLimit ? 'bg-gradient-to-r from-amber-400 to-orange-500' : 'bg-gradient-to-r from-emerald-400 to-teal-500'
-                                      }`}
-                                    style={{ width: `${percentage}%` }}
-                                  />
-                                </div>
-                                <div className="flex justify-between items-center">
-                                  <span className={`text-[8px] font-black uppercase ${isOverloaded ? 'text-red-500' : isNearLimit ? 'text-amber-500' : 'text-emerald-600'
-                                    }`}>
-                                    {isOverloaded ? '⚠ SOBRECARGA' : isNearLimit ? '⚡ Cerca del límite' : '✓ Carga Óptima'}
-                                  </span>
-                                  <span className="text-[8px] font-bold text-slate-400">{Math.round(percentage)}%</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Assignments list */}
-                            {teacherAssignments.length > 0 && (
-                              <div className="px-3 py-2 bg-slate-50/50 dark:bg-black/20">
-                                <p className="text-[8px] font-bold text-slate-400 uppercase mb-1.5">Asignaturas asignadas</p>
-                                <div className="flex flex-wrap gap-1">
-                                  {teacherAssignments.slice(0, 4).map((a, i) => (
-                                    <span
-                                      key={i}
-                                      className="text-[8px] px-1.5 py-0.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded text-slate-600 dark:text-slate-300 font-medium"
-                                    >
-                                      {(a.subject_name || 'S/N').split(' ')[0]} • {(a.day_of_week && a.day_of_week <= cardDays.length) ? cardDays[a.day_of_week - 1] : '??'} {a.timeslot_label || ''}
-                                    </span>
-                                  ))}
-                                  {teacherAssignments.length > 4 && (
-                                    <span className="text-[8px] px-1.5 py-0.5 bg-slate-200 dark:bg-slate-600 rounded text-slate-500 dark:text-slate-400 font-bold">
-                                      +{teacherAssignments.length - 4} más
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* No assignments */}
-                            {teacherAssignments.length === 0 && (
-                              <div className="px-3 py-2 bg-slate-50/50 dark:bg-black/20">
-                                <p className="text-[9px] text-slate-400 italic">Sin asignaciones aún</p>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </aside>
-
-          {/* Scheduler View */}
-          <main className="flex-1 flex flex-col min-w-0 bg-[#eef2f6] dark:bg-black relative overflow-hidden">
-            <div className="h-11 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-[#111418]/80 backdrop-blur-md flex items-center justify-between px-6 shrink-0 z-10">
-              <div className="flex items-center gap-4">
-                {/* View Mode Selector */}
-                <div className="relative">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-                    <span>Vista:</span>
-                    <button
-                      onClick={() => setShowViewDropdown(!showViewDropdown)}
-                      className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-slate-800 dark:text-white font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                    >
-                      {viewMode === 'sala' && selectedViewRoom}
-                      {viewMode === 'nivel' && `Nivel ${selectedViewLevel}`}
-                      {viewMode === 'docente' && (selectedViewTeacher || 'Por Docente')}
-                      <span className="material-symbols-outlined text-sm">expand_more</span>
-                    </button>
-                  </div>
-
-                  {showViewDropdown && (
-                    <div className="absolute top-full left-0 mt-1 w-64 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden z-50">
-                      <div className="p-2 border-b border-slate-100 dark:border-slate-800">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase px-2">Tipo de Vista</p>
-                      </div>
-
-                      {/* Por Sala */}
-                      <div className="border-b border-slate-100 dark:border-slate-800">
-                        <button
-                          onClick={() => { setViewMode('sala'); }}
-                          className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-all ${viewMode === 'sala' ? 'bg-primary/5 text-primary' : 'text-slate-700 dark:text-slate-300'}`}
-                        >
-                          <span className="material-symbols-outlined text-[18px]">meeting_room</span>
-                          <span className="font-medium">Por Sala</span>
-                        </button>
-                        {viewMode === 'sala' && (
-                          <div className="px-4 pb-3 flex flex-wrap gap-1">
-                            {availableRooms.map(room => (
-                              <button
-                                key={room.id}
-                                onClick={() => { setSelectedViewRoom(room.name); setShowViewDropdown(false); }}
-                                className={`px-2 py-1 text-xs font-bold rounded ${selectedViewRoom === room.name ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'}`}
-                              >
-                                {room.name.replace('SALA ', '').replace('LAB ', '').replace('SIMULADOR ', 'SIM ')}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Por Nivel */}
-                      <div className="border-t border-slate-100 dark:border-slate-800">
-                        <button
-                          onClick={() => { setViewMode('nivel'); }}
-                          className={`w-full flex items-center gap-2 px-4 py-2 text-sm ${viewMode === 'nivel' ? 'bg-primary/5 text-primary' : 'text-slate-700 dark:text-slate-300'}`}
-                        >
-                          <span className="material-symbols-outlined text-[18px]">school</span>
-                          <span className="font-medium">Por Nivel</span>
-                        </button>
-                        {viewMode === 'nivel' && (
-                          <div className="px-4 pb-3 flex flex-wrap gap-1">
-                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(level => (
-                              <button
-                                key={level}
-                                onClick={() => { setSelectedViewLevel(level); setShowViewDropdown(false); }}
-                                className={`px-2 py-1 text-xs font-bold rounded ${selectedViewLevel === level ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'}`}
-                              >
-                                {level}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Por Docente */}
-                      <div className="border-t border-slate-100 dark:border-slate-800">
-                        <button
-                          onClick={() => { setViewMode('docente'); }}
-                          className={`w-full flex items-center gap-2 px-4 py-2 text-sm ${viewMode === 'docente' ? 'bg-primary/5 text-primary' : 'text-slate-700 dark:text-slate-300'}`}
-                        >
-                          <span className="material-symbols-outlined text-[18px]">person</span>
-                          <span className="font-medium">Por Docente</span>
-                        </button>
-                        {viewMode === 'docente' && (
-                          <div className="px-4 pb-3">
-                            <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
-                              {Array.from(new Set(sections.map(s => s.teacher_name).filter(Boolean))).map(teacher => (
-                                <button
-                                  key={teacher}
-                                  onClick={() => { setSelectedViewTeacher(teacher); setShowViewDropdown(false); }}
-                                  className={`px-2 py-1.5 text-xs font-bold rounded text-left ${selectedViewTeacher === teacher ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'}`}
-                                >
-                                  {teacher}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="h-4 w-px bg-slate-200 dark:bg-slate-700"></div>
-
-                {/* Current view indicator */}
-                {viewMode === 'nivel' && (
-                  <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 dark:bg-blue-900/20 rounded-full">
-                    <span className="material-symbols-outlined text-blue-500 text-[14px]">school</span>
-                    <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">Mostrando Nivel {selectedViewLevel}</span>
-                  </div>
-                )}
-                {viewMode === 'docente' && selectedViewTeacher && (
-                  <div className="flex items-center gap-2 px-3 py-1 bg-purple-50 dark:bg-purple-900/20 rounded-full">
-                    <span className="material-symbols-outlined text-purple-500 text-[14px]">person</span>
-                    <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400">{selectedViewTeacher}</span>
-                  </div>
-                )}
-
-                {selectedSection && (
-                  <div className="flex items-center px-3 py-1 bg-primary/10 rounded-full text-[10px] font-bold text-primary ring-1 ring-primary/20">
-                    Asignando: {selectedSection.subject_name} [NRC {selectedSection.nrc}]
-                  </div>
-                )}
+          {/* Interactive Timetable Grid */}
+          <div ref={gridContainerRef} className="flex-1 flex overflow-hidden">
+            {loading ? (
+              <div className="flex-1 flex items-center justify-center text-xs text-slate-500">
+                <span className="material-symbols-outlined animate-spin text-2xl mr-2">progress_activity</span>
+                Cargando horario académico...
               </div>
-              <div className="flex gap-4">
-                <span className="material-symbols-outlined text-slate-400 text-lg cursor-pointer hover:text-slate-600">zoom_in</span>
-                <span className="material-symbols-outlined text-slate-400 text-lg cursor-pointer hover:text-slate-600">zoom_out</span>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-auto p-4 custom-scrollbar relative">
-              <div id="scheduler-calendar-view" className="w-full min-w-[1000px] border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm bg-white dark:bg-surface-dark">
-                {/* Days Header */}
-                <div className={`grid grid-cols-[80px_repeat(5,minmax(0,1fr))] divide-x divide-slate-200 dark:divide-slate-800 bg-slate-50 dark:bg-[#111418] border-b border-slate-200 dark:border-slate-800`}>
-                  <div className="p-3 flex flex-col items-center justify-center gap-1">
-                    <span className="text-[8px] font-black text-slate-400 uppercase">Secciones</span>
-                    <div className="flex bg-slate-200 dark:bg-slate-700 p-0.5 rounded-md">
-                      {[1, 2, 3, 4].map(n => (
-                        <button
-                          key={n}
-                          onClick={() => setParallelCount(n)}
-                          className={`size-5 rounded flex items-center justify-center text-[9px] font-black transition-all ${parallelCount === n ? 'bg-primary text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                          {n}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {days.map(day => (
-                    <div key={day} className="">
-                      <div className="p-2 text-center text-[10px] font-black text-slate-400 tracking-[0.2em] uppercase border-b border-slate-200/50 dark:border-slate-800/50 min-w-0">
-                        {day}
-                      </div>
-                      <div className="grid divide-x divide-slate-200/50 dark:divide-slate-800/50" style={{ gridTemplateColumns: `repeat(${parallelCount}, minmax(0, 1fr))` }}>
-                        {Array.from({ length: parallelCount }).map((_, i) => (
-                          <div key={i} className="py-1 text-center text-[8px] font-bold text-slate-400 uppercase bg-slate-100/30 dark:bg-white/5 truncate px-1 min-w-0">
-                            Sec {String.fromCharCode(65 + i)}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Time Slots Grid */}
-                <div className="grid grid-cols-[80px_repeat(5,minmax(0,1fr))] divide-x divide-slate-200 dark:divide-slate-800 bg-white dark:bg-[#0b0e14]">
-                  {timeslots.map(slot => (
-                    <React.Fragment key={slot.id}>
-                      {/* Time Label */}
-                      <div className="flex flex-col items-center justify-center py-8 border-b border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-transparent">
-                        <span className="text-xs font-black text-slate-800 dark:text-white">{slot.label}</span>
-                        <span className="text-[9px] text-slate-400 font-bold">{slot.start_time}</span>
-                      </div>
-
-                      {/* Day Columns */}
-                      {[1, 2, 3, 4, 5].map(dayOfWeek => {
-                        const studentCount = getStudentCountForSlot(slot.id, dayOfWeek);
-                        return (
-                          <div key={dayOfWeek} className="border-b border-slate-200 dark:border-slate-800 relative">
-                            {/* Student count badge */}
-                            {studentCount > 0 && (
-                              <div className="absolute top-0 right-0 z-10 px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 rounded-bl-lg">
-                                <span className="text-[8px] font-bold text-blue-600 dark:text-blue-400 flex items-center gap-0.5">
-                                  <span className="material-symbols-outlined text-[10px]">group</span>
-                                  {studentCount}
-                                </span>
-                              </div>
-                            )}
-                            <div className="grid h-full divide-x divide-slate-200/50 dark:divide-slate-800/50 min-w-0" style={{ gridTemplateColumns: `repeat(${parallelCount}, minmax(0, 1fr))` }}>
-                              {Array.from({ length: parallelCount }).map((_, parallelIdx) => {
-                                const assignment = getAssignmentForSlot(slot.id, dayOfWeek, parallelIdx);
-                                const conflict = hasConflict(slot.id, dayOfWeek);
-                                const sectionToCheck = draggingSection || selectedSection;
-                                const slotInfo = sectionToCheck ? isSlotAvailable(slot.id, dayOfWeek, parallelIdx) : null;
-                                const colorClass = sectionToCheck && !assignment ? getSlotColorClass(slot.id, dayOfWeek, parallelIdx) : '';
-                                const isDropTarget = dropTarget?.timeslotId === slot.id && dropTarget?.dayOfWeek === dayOfWeek && dropTarget?.parallelIndex === parallelIdx;
-
-                                // Teacher availability check
-                                const currentContextTeacher = sectionToCheck?.teacher_name || (viewMode === 'docente' ? selectedViewTeacher : null);
-                                const teacherObj = teachers.find(t => t && t.nombre?.trim() === currentContextTeacher?.trim());
-                                const isTeacherBlocked = teacherObj?.availability?.[`${slot.id}-${dayOfWeek}`] === 'blocked';
-
-                                return (
-                                  <div
-                                    key={`${slot.id}-${dayOfWeek}-${parallelIdx}`}
-                                    role={sectionToCheck && !assignment ? 'button' : undefined}
-                                    tabIndex={sectionToCheck && !assignment ? 0 : undefined}
-                                    aria-label={sectionToCheck && !assignment ? `Asignar ${sectionToCheck.subject_name} el ${days[dayOfWeek - 1]} en ${slot.label}, paralelo ${parallelIdx + 1}` : undefined}
-                                    onClick={() => sectionToCheck && !assignment && !isTeacherBlocked && handleAssignToSlot(slot.id, dayOfWeek, parallelIdx)}
-                                    onKeyDown={event => {
-                                      if ((event.key === 'Enter' || event.key === ' ') && sectionToCheck && !assignment && !isTeacherBlocked) {
-                                        event.preventDefault();
-                                        handleAssignToSlot(slot.id, dayOfWeek, parallelIdx);
-                                      }
-                                    }}
-                                    onDragOver={(e) => handleDragOver(e, slot.id, dayOfWeek, parallelIdx)}
-                                    onDragLeave={() => setDropTarget(null)}
-                                    onDrop={(e) => !isTeacherBlocked && handleDrop(e, slot.id, dayOfWeek, parallelIdx)}
-                                    className={`p-1 min-h-[120px] transition-all relative group/cell ${conflict ? 'bg-red-50/10' : ''} ${colorClass} ${isDropTarget && slotInfo?.available ? 'bg-primary/20 ring-1 ring-primary ring-inset' : ''} ${isTeacherBlocked ? 'bg-red-500/[0.02]' : ''}`}
-                                  >
-                                    {isTeacherBlocked && !assignment && (
-                                      <div className="absolute inset-0 flex items-center justify-center z-0 pointer-events-none opacity-20">
-                                        <div className="absolute inset-0 bg-red-500/5" style={{ background: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(239, 68, 68, 0.05) 5px, rgba(239, 68, 68, 0.05) 10px)' }}></div>
-                                      </div>
-                                    )}
-                                    {assignment ? (
-                                      <div className={`h-full rounded-lg p-2 flex flex-col relative group ${conflict
-                                        ? 'bg-white dark:bg-slate-800 border-2 border-red-500/50 shadow-xl shadow-red-500/5 ring-1 ring-red-500/20'
-                                        : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm'
-                                        }`}>
-                                        {conflict && (
-                                          <span className="material-symbols-outlined absolute top-2 right-2 text-red-500 text-[14px] fill-1 pr-[22px]">error</span>
-                                        )}
-                                        <div className={`absolute top-1 right-1 flex items-center gap-1 transition-all ${conflict ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                                          <button
-                                            onClick={(e) => { e.stopPropagation(); openEditAssignmentModal(assignment); }}
-                                            className="p-1 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-500 hover:bg-blue-200 dark:hover:bg-blue-800/60"
-                                            title="Editar asignación / Negociar"
-                                          >
-                                            <span className="material-symbols-outlined text-[12px]">edit</span>
-                                          </button>
-                                          <button
-                                            onClick={(e) => { e.stopPropagation(); unassignFromSlot(assignment.id); }}
-                                            className="p-1 rounded-full bg-red-100 dark:bg-red-900/40 text-red-500 hover:bg-red-200 dark:hover:bg-red-800/60"
-                                            title="Devolver al backlog"
-                                          >
-                                            <span className="material-symbols-outlined text-[12px]">undo</span>
-                                          </button>
-                                        </div>
-                                        <div className="flex items-center justify-between mb-1 min-w-0">
-                                          <h4 className="text-[10px] font-black text-slate-900 dark:text-white truncate">{assignment.subject_name}</h4>
-                                        </div>
-                                        <p className="text-[8px] text-slate-400 font-bold mb-3 uppercase tracking-tighter truncate">
-                                          {assignment.room_name} • Nivel {assignment.level}
-                                        </p>
-                                        {conflict && (
-                                          <div className="mt-auto px-2 py-1 bg-red-50 dark:bg-red-900/30 rounded text-[8px] font-black text-red-600 text-center uppercase tracking-widest border border-red-100 dark:border-red-900/40">
-                                            Choque Docente
-                                          </div>
-                                        )}
-                                        {!conflict && assignment.teacher_name && (
-                                          <div className="flex flex-col gap-1 mt-auto overflow-hidden">
-                                            <div className="flex items-center gap-1.5 ">
-                                              <div className="size-3.5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
-                                                <span className="material-symbols-outlined text-[10px] text-slate-500">person</span>
-                                              </div>
-                                              <span className="text-[9px] font-bold text-slate-600 dark:text-slate-400 truncate">{assignment.teacher_name}</span>
-                                            </div>
-                                            <div className="flex items-center justify-between gap-1.5">
-                                              {(() => {
-                                                const teacherObj = teachers.find(t => t.nombre === assignment.teacher_name);
-                                                const assigned = getTeacherHours(assignment.teacher_name);
-                                                const max = teacherObj?.max_horas || 20;
-                                                const percentage = Math.min(100, (assigned / max) * 100);
-                                                const isOver = assigned > max;
-                                                return (
-                                                  <>
-                                                    <div className="h-1 flex-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                                      <div
-                                                        className={`h-full transition-all ${isOver ? 'bg-red-500' : 'bg-emerald-500'}`}
-                                                        style={{ width: `${percentage}%` }}
-                                                      />
-                                                    </div>
-                                                    <span className={`text-[7px] font-black shrink-0 ${isOver ? 'text-red-500' : 'text-slate-400'}`}>
-                                                      {assigned}/{max}
-                                                    </span>
-                                                  </>
-                                                );
-                                              })()}
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                    ) : sectionToCheck && slotInfo ? (
-                                      <div className={`h-full rounded-lg flex flex-col items-center justify-center ${slotInfo.available
-                                        ? 'border-2 border-dashed border-emerald-400 dark:border-emerald-600'
-                                        : ''
-                                        }`}>
-                                        {slotInfo.available ? (
-                                          <>
-                                            <span className="material-symbols-outlined text-emerald-500 text-xl mb-1">add_circle</span>
-                                            <p className="text-emerald-600 text-[10px] font-black uppercase tracking-tight">Asignar aquí</p>
-                                            {slotInfo.score >= 100 && (
-                                              <p className="text-[8px] text-emerald-500 font-bold flex items-center gap-1 mt-1">
-                                                <span className="material-symbols-outlined text-[12px]">star</span>
-                                                Recomendado
-                                              </p>
-                                            )}
-                                          </>
-                                        ) : (
-                                          <p className="text-slate-400 text-[9px] font-bold">{slotInfo.reason}</p>
-                                        )}
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </React.Fragment>
-                  ))}
-                </div>
-              </div>{/* Conflict Alert Bottom Bar */}
-              {conflicts.length > 0 && !showConflictsPanel && (
-                <button
-                  type="button"
-                  onClick={() => setShowConflictsPanel(true)}
-                  className="absolute bottom-4 left-4 bg-white dark:bg-[#1a2430] rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center gap-3 hover:shadow-xl transition-all z-30 text-left"
-                >
-                  <div className="size-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-red-500 text-lg">error</span>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-800 dark:text-white">{conflicts.length} conflicto{conflicts.length > 1 ? 's' : ''} detectado{conflicts.length > 1 ? 's' : ''}</p>
-                    <p className="text-[10px] text-slate-500">Click para ver detalles</p>
-                  </div>
-                  <span className="material-symbols-outlined text-slate-400 text-lg">chevron_right</span>
-                </button>
-              )}
-            </div>
-
-            {/* Conflicts Side Panel */}
-            {showConflictsPanel && (
-              <ConflictPanel
+            ) : (
+              <SchedulerGrid
+                timeslots={timeslots}
+                assignments={assignments}
                 conflicts={conflicts}
-                days={days}
-                setShowConflictsPanel={setShowConflictsPanel}
-                setSelectedConflict={setSelectedConflict}
-                onResolveAll={resolveAllConflicts}
+                viewMode={viewMode}
+                selectedViewLevel={selectedViewLevel}
+                selectedViewRoom={selectedViewRoom}
+                selectedViewTeacher={selectedViewTeacher}
+                parallelCount={3}
+                draggingSection={draggingSection}
+                dropTarget={dropTarget}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onEditAssignment={handleEditAssignment}
+                onDeleteAssignment={handleDeleteAssignment}
               />
             )}
-          </main>
+          </div>
         </div>
+
+        {/* Modals and Drawers */}
+        <AssignmentModal
+          assignment={editingAssignment}
+          isOpen={Boolean(editingAssignment)}
+          onClose={() => setEditingAssignment(null)}
+          availableRooms={availableRooms}
+          availableTeachers={availableTeachersList}
+          onSave={handleSaveAssignment}
+          onDelete={handleDeleteAssignment}
+        />
+
+        <SectionModal
+          section={editingSection}
+          isOpen={isSectionModalOpen}
+          onClose={() => {
+            setIsSectionModalOpen(false);
+            setEditingSection(null);
+          }}
+          allSubjects={allSubjects}
+          availableTeachers={availableTeachersList}
+          existingTheories={sections.filter(s => s.type === 'TEO')}
+          onSave={handleSaveSection}
+          onDelete={handleDeleteSection}
+        />
+
+        <RoomSelectorModal
+          selectorData={roomSelectorData}
+          compatibleRooms={roomSelectorData ? getCompatibleRoomsForType(roomSelectorData.section.type || 'TEO') : []}
+          onClose={() => setRoomSelectorData(null)}
+          onSelectRoom={handleConfirmRoomAssignment}
+        />
+
+        <ExportModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          assignments={assignments}
+          periodName={periods.find(p => p.id === selectedPeriod)?.name}
+          onExportPdf={handleExportPdf}
+        />
+
+        <AuditDrawer
+          isOpen={showAuditPanel}
+          onClose={() => setShowAuditPanel(false)}
+          auditLog={auditLog}
+        />
+
+        {showConflictsPanel && (
+          <div className="fixed inset-0 z-50 bg-black/40 flex justify-end">
+            <ConflictPanel
+              conflicts={conflicts}
+              days={DAYS_LIST}
+              setShowConflictsPanel={setShowConflictsPanel}
+              setSelectedConflict={setSelectedConflict}
+              onResolveAll={async () => {
+                for (const conflict of conflicts) {
+                  await api.resolveConflict(conflict.id, true);
+                }
+                await loadScheduleData();
+              }}
+            />
+          </div>
+        )}
       </div>
-
-      {/* Conflict Detail Modal */}
-      {selectedConflict && (
-        <div role="dialog" aria-modal="true" aria-labelledby="conflict-dialog-title" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-[#1a2430] rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
-            {/* Modal Header */}
-            <div className={`p-5 ${selectedConflict.type === 'CRITICAL' ? 'bg-red-500' : 'bg-amber-500'}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-white text-2xl">
-                    {selectedConflict.type === 'CRITICAL' ? 'error' : 'warning'}
-                  </span>
-                  <div>
-                    <h3 id="conflict-dialog-title" className="text-lg font-bold text-white">Detalle del Conflicto</h3>
-                    <p className="text-white/80 text-sm">{selectedConflict.rule_code}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setSelectedConflict(null)}
-                  aria-label="Cerrar detalle del conflicto"
-                  className="p-1 hover:bg-white/20 rounded transition-colors"
-                >
-                  <span className="material-symbols-outlined text-white">close</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5">
-              {/* Affected Resource */}
-              <div className="mb-5">
-                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Asignatura Afectada</p>
-                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 flex items-center gap-3">
-                  <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-primary">menu_book</span>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-800 dark:text-white">{selectedConflict.subject_name}</h4>
-                    <p className="text-xs text-slate-500">NRC {selectedConflict.nrc}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Problem Description */}
-              <div className="mb-5">
-                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">¿Cuál es el problema?</p>
-                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                  {selectedConflict.description}
-                </p>
-              </div>
-
-              {/* When/Where */}
-              <div className="mb-5 grid grid-cols-2 gap-3">
-                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3">
-                  <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Día</p>
-                  <p className="text-sm font-bold text-slate-800 dark:text-white">{days[selectedConflict.day_of_week - 1]}</p>
-                </div>
-                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3">
-                  <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Bloque</p>
-                  <p className="text-sm font-bold text-slate-800 dark:text-white">{selectedConflict.timeslot_label}</p>
-                </div>
-              </div>
-
-              {/* Teacher if applicable */}
-              {selectedConflict.teacher_name && (
-                <div className="mb-5">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Docente Involucrado</p>
-                  <div className="flex items-center gap-2">
-                    <div className="size-8 rounded-full bg-slate-200 dark:bg-slate-700"></div>
-                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{selectedConflict.teacher_name}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Actions */}
-            <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-[#111418] flex gap-3">
-              <button
-                onClick={() => setSelectedConflict(null)}
-                className="flex-1 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
-              >
-                Ignorar
-              </button>
-              <button
-                onClick={() => resolveConflict(selectedConflict)}
-                className="flex-1 py-2.5 bg-primary text-white text-sm font-bold rounded-lg shadow-lg shadow-primary/20 hover:bg-primary-dark transition-all flex items-center justify-center gap-2"
-              >
-                <span className="material-symbols-outlined text-[18px]">auto_fix</span>
-                Resolver
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Export Modal */}
-      {showExportModal && (
-        <div role="dialog" aria-modal="true" aria-label="Exportar horario" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-[#1a2430] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-primary text-2xl">download</span>
-                <h3 className="text-lg font-bold text-slate-800 dark:text-white">Exportar Horario</h3>
-              </div>
-              <button aria-label="Cerrar exportación" onClick={() => setShowExportModal(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
-                <span className="material-symbols-outlined text-slate-400">close</span>
-              </button>
-            </div>
-
-            <div className="p-5">
-              <p className="text-sm text-slate-500 mb-4">Selecciona el formato de exportación:</p>
-
-              <div className="space-y-2">
-                <button
-                  onClick={exportToCSV}
-                  className="w-full flex items-center gap-3 p-4 bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700"
-                >
-                  <div className="size-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-emerald-600">table_chart</span>
-                  </div>
-                  <div className="text-left">
-                    <p className="text-sm font-bold text-slate-800 dark:text-white">CSV (Excel Compatible)</p>
-                    <p className="text-xs text-slate-500">Tabla de datos para análisis</p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={exportToPDF}
-                  className="w-full flex items-center gap-3 p-4 bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700"
-                >
-                  <div className="size-10 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-red-600">picture_as_pdf</span>
-                  </div>
-                  <div className="text-left">
-                    <p className="text-sm font-bold text-slate-800 dark:text-white">PDF</p>
-                    <p className="text-xs text-slate-500">Documento profesional para imprimir</p>
-                  </div>
-                </button>
-              </div>
-
-              <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <p className="text-xs text-blue-600 dark:text-blue-400">
-                  <strong>{assignments.length}</strong> asignaciones serán exportadas para el período <strong>{selectedPeriod}</strong>
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Audit Panel */}
-      {showAuditPanel && (
-        <div role="dialog" aria-modal="true" aria-label="Historial de auditoría" className="fixed inset-0 bg-black/50 flex items-end justify-end z-50">
-          <div className="bg-white dark:bg-[#1a2430] w-full max-w-md h-full shadow-2xl flex flex-col">
-            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-primary">history</span>
-                <h3 className="text-lg font-bold text-slate-800 dark:text-white">Historial de Cambios</h3>
-              </div>
-              <button aria-label="Cerrar auditoría" onClick={() => setShowAuditPanel(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
-                <span className="material-symbols-outlined text-slate-400">close</span>
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4">
-              {auditLog.map(entry => (
-                <div key={entry.id} className="flex gap-3 mb-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-                  <div className={`size-8 rounded-lg flex items-center justify-center shrink-0 ${entry.action === 'assign' ? 'bg-emerald-100 dark:bg-emerald-900/30' :
-                    entry.action === 'resolve' ? 'bg-blue-100 dark:bg-blue-900/30' :
-                      entry.action === 'publish' ? 'bg-purple-100 dark:bg-purple-900/30' :
-                        entry.action === 'auto_assign' ? 'bg-amber-100 dark:bg-amber-900/30' :
-                          'bg-slate-100 dark:bg-slate-800'
-                    }`}>
-                    <span className={`material-symbols-outlined text-[16px] ${entry.action === 'assign' ? 'text-emerald-600' :
-                      entry.action === 'resolve' ? 'text-blue-600' :
-                        entry.action === 'publish' ? 'text-purple-600' :
-                          entry.action === 'auto_assign' ? 'text-amber-600' :
-                            'text-slate-500'
-                      }`}>
-                      {entry.action === 'assign' ? 'add_circle' :
-                        entry.action === 'resolve' ? 'auto_fix' :
-                          entry.action === 'publish' ? 'publish' :
-                            entry.action === 'auto_assign' ? 'bolt' :
-                              'save'}
-                    </span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 dark:text-white">{entry.description}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] text-slate-400">{entry.user}</span>
-                      <span className="text-[10px] text-slate-300">•</span>
-                      <span className="text-[10px] text-slate-400">
-                        {entry.timestamp.toLocaleString('es-CL', {
-                          day: '2-digit',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {auditLog.length === 0 && (
-                <div className="text-center py-8">
-                  <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">history</span>
-                  <p className="text-sm text-slate-400">No hay cambios registrados</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Error Toast */}
-      {error && (
-        <div className="fixed bottom-4 right-4 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 z-50">
-          <span className="material-symbols-outlined text-amber-500">info</span>
-          <span className="text-sm">{error}</span>
-          <button onClick={() => setError(null)} className="text-amber-500 hover:text-amber-700">
-            <span className="material-symbols-outlined text-[18px]">close</span>
-          </button>
-        </div>
-      )}
-
-      {/* Room Selector Modal */}
-      {showRoomSelector && (
-        <div role="dialog" aria-modal="true" aria-label="Seleccionar sala" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-primary/5">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">meeting_room</span>
-                Seleccionar Sala
-              </h3>
-              <p className="text-sm text-slate-500 mt-1">
-                {showRoomSelector.section.subject_name} → {days[showRoomSelector.dayOfWeek - 1]}, {timeslots.find(t => t.id === showRoomSelector.timeslotId)?.label}
-              </p>
-            </div>
-
-            <div className="p-4 max-h-[400px] overflow-y-auto">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                Salas disponibles ({showRoomSelector.section.type})
-              </p>
-              <div className="space-y-2">
-                {getCompatibleRooms(showRoomSelector.section.type).map(room => (
-                  <button
-                    key={room.id}
-                    onClick={() => confirmAssignment(room.name)}
-                    className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-primary hover:bg-primary/5 transition-all text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`size-10 rounded-lg flex items-center justify-center ${room.type === 'LAB' ? 'bg-purple-100 text-purple-600'
-                        : room.type === 'SIM' ? 'bg-amber-100 text-amber-600'
-                          : 'bg-blue-100 text-blue-600'
-                        }`}>
-                        <span className="material-symbols-outlined text-xl">
-                          {room.type === 'LAB' ? 'science' : room.type === 'SIM' ? 'smart_toy' : 'school'}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-900 dark:text-white">{room.name}</p>
-                        <p className="text-xs text-slate-500">{room.type} • {room.capacity} personas</p>
-                      </div>
-                    </div>
-                    <span className="material-symbols-outlined text-slate-300">chevron_right</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
-              <button
-                onClick={() => setShowRoomSelector(null)}
-                className="w-full py-2 text-slate-600 dark:text-slate-400 font-semibold hover:text-slate-900 dark:hover:text-white transition-colors"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Assignment / Negotiation Modal */}
-      {editingAssignment && (
-        <div role="dialog" aria-modal="true" aria-label="Editar asignación" className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 relative overflow-hidden">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">edit</span>
-                Editar Asignación / Negociación
-              </h3>
-              <button 
-                onClick={() => setEditingAssignment(null)}
-                className="size-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-all"
-              >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
-            </div>
-
-            <div className="mb-4 p-3.5 bg-primary/5 rounded-xl border border-primary/10">
-              <p className="text-[10px] font-bold text-primary uppercase tracking-wider">Asignatura</p>
-              <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{editingAssignment.subject_name}</p>
-              <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase">
-                {editingAssignment.subject_code} • {sections.find(s => s.id === editingAssignment.section_id)?.type || 'TEO'} • Nivel {editingAssignment.level}
-              </p>
-            </div>
-
-            <form onSubmit={(e) => { e.preventDefault(); saveEditedAssignment(); }} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                  Sala Asignada
-                </label>
-                <select
-                  value={editFormData.room_name}
-                  onChange={(e) => setEditFormData({ ...editFormData, room_name: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
-                >
-                  <option value="">Sin sala</option>
-                  {availableRooms.map(room => (
-                    <option key={room.id} value={room.name}>
-                      {room.name} ({room.type} • Cap: {room.capacity})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                  Docente Asignado
-                </label>
-                <select
-                  value={editFormData.teacher_name}
-                  onChange={(e) => setEditFormData({ ...editFormData, teacher_name: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
-                >
-                  <option value="">Sin docente</option>
-                  {teachers.map((teacher, idx) => (
-                    <option key={teacher.id || idx} value={teacher.nombre}>
-                      {teacher.nombre} ({teacher.tipo_contrato || 'Contrato no especificado'})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setEditingAssignment(null)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary-dark shadow-md shadow-primary/20 transition-all"
-                >
-                  Guardar Cambios
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Section Creation/Edition Modal */}
-      {isSectionModalOpen && (
-        <div role="dialog" aria-modal="true" aria-label={editingSection ? 'Editar sección' : 'Crear sección'} className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 relative overflow-hidden">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">format_list_numbered</span>
-                {editingSection ? 'Editar Sección' : 'Registrar Nueva Sección / NRC'}
-              </h3>
-              <button 
-                onClick={() => setIsSectionModalOpen(false)}
-                aria-label="Cerrar formulario de sección"
-                className="size-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-all"
-              >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
-            </div>
-
-            <form onSubmit={(e) => { e.preventDefault(); saveEditedSection(); }} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                  Asignatura Relacionada
-                </label>
-                <select
-                  value={sectionFormData.subject_id}
-                  onChange={(e) => setSectionFormData({ ...sectionFormData, subject_id: e.target.value, parent_section_id: '' })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
-                  required
-                >
-                  <option value="" disabled>Seleccione asignatura</option>
-                  {allSubjects.map(sub => (
-                    <option key={sub.id} value={sub.id}>
-                      {sub.nombre} ({sub.codigo})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                    NRC (Código Registro)
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej: 23456"
-                    value={sectionFormData.nrc}
-                    onChange={(e) => setSectionFormData({ ...sectionFormData, nrc: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                    Tipo de Sección
-                  </label>
-                  <select
-                    value={sectionFormData.type}
-                    onChange={(e) => setSectionFormData({
-                      ...sectionFormData,
-                      type: e.target.value,
-                      parent_section_id: e.target.value === 'TEO' ? '' : sectionFormData.parent_section_id,
-                    })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
-                  >
-                    <option value="TEO">Teórica (TEO)</option>
-                    <option value="LAB">Laboratorio (LAB)</option>
-                    <option value="TAL">Taller (TAL)</option>
-                    <option value="SIM">Simulación (SIM)</option>
-                  </select>
-                </div>
-              </div>
-
-              {sectionFormData.type !== 'TEO' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                    Sección teórica padre
-                  </label>
-                  <select
-                    required
-                    value={sectionFormData.parent_section_id}
-                    onChange={(e) => setSectionFormData({ ...sectionFormData, parent_section_id: e.target.value })}
-                    className="w-full rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50/50 dark:bg-cyan-950/20 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
-                  >
-                    <option value="">Seleccione el NRC teórico</option>
-                    {sections
-                      .filter(section => section.type === 'TEO' && section.subject_id === sectionFormData.subject_id && section.id !== editingSection?.id)
-                      .map(section => (
-                        <option key={section.id} value={section.id}>NRC {section.nrc} · {section.subject_name}</option>
-                      ))}
-                  </select>
-                  <p className="mt-1.5 text-[10px] text-slate-500">Las prácticas hermanas pueden compartir horario; esta práctica nunca podrá coincidir con su teoría.</p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                    Nivel / Semestre
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    max={12}
-                    value={sectionFormData.level}
-                    onChange={(e) => setSectionFormData({ ...sectionFormData, level: parseInt(e.target.value) || 1 })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                    Horas Semanales
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    max={12}
-                    value={sectionFormData.hours_per_week}
-                    onChange={(e) => setSectionFormData({ ...sectionFormData, hours_per_week: parseInt(e.target.value) || 2 })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                  Docente Preferido / Inicial
-                </label>
-                <select
-                  value={sectionFormData.teacher_name}
-                  onChange={(e) => setSectionFormData({ ...sectionFormData, teacher_name: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all appearance-none"
-                >
-                  <option value="">Sin docente preferido</option>
-                  {teachers.map((teacher, idx) => (
-                    <option key={teacher.id || idx} value={teacher.nombre}>
-                      {teacher.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsSectionModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary-dark shadow-md shadow-primary/20 transition-all"
-                >
-                  {editingSection ? 'Guardar Cambios' : 'Crear Sección'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+    </MainLayout>
   );
 };
 

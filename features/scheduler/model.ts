@@ -8,6 +8,7 @@ export interface SchedulerSection {
   type: string;
   parent_section_id: string | null;
   parent_nrc: string | null;
+  parent_subject_name?: string | null;
   hours_per_week: number;
   teacher_name: string | null;
   priority: number;
@@ -21,26 +22,34 @@ export interface SchedulerAssignment {
   subject_name: string;
   subject_code: string;
   level: number;
+  section_type?: string;
+  teacher_id?: string | null;
   teacher_name: string | null;
+  room_id?: string | null;
   room_name: string | null;
-  room_type: string | null;
+  room_type?: string | null;
   timeslot_id: string;
   timeslot_label: string;
+  start_time?: string;
+  end_time?: string;
   day_of_week: number;
   parallel_index: number;
+  period_id?: string;
 }
 
 export interface SchedulerConflict {
   id: string;
+  assignment_id?: string;
   type: string;
   rule_code: string;
   description: string;
-  subject_name: string;
-  nrc: string;
-  teacher_name: string | null;
-  timeslot_label: string;
+  subject_name?: string;
+  nrc?: string;
+  teacher_name?: string | null;
+  timeslot_label?: string;
   day_of_week: number;
-  parallel_index: number;
+  parallel_index?: number;
+  is_resolved?: boolean | number;
 }
 
 export interface SchedulerTimeslot {
@@ -75,13 +84,19 @@ export const mapBackendAssignments = (backendAssignments: Array<Record<string, a
       subject_name: assignment.subject_name,
       subject_code: assignment.subject_code,
       level: assignment.level,
+      section_type: assignment.section_type || assignment.type || 'TEO',
+      teacher_id: assignment.teacher_id || null,
       teacher_name: assignment.teacher_name,
+      room_id: assignment.room_id || null,
       room_name: assignment.room_name,
       room_type: assignment.room_type || 'TEO',
       timeslot_id: assignment.timeslot_id,
       timeslot_label: assignment.timeslot_label,
+      start_time: assignment.start_time,
+      end_time: assignment.end_time,
       day_of_week: assignment.day_of_week,
       parallel_index: parallelIndex,
+      period_id: assignment.period_id,
     };
   });
 };

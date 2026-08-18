@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildAssignmentQueue, calculateCoverage, validateScheduleImport } from './workflow';
+import {
+  buildAssignmentQueue,
+  buildPrioritizedAssignmentQueue,
+  calculateCoverage,
+  calculateSectionDifficulty,
+  validateScheduleImport,
+} from './workflow';
 
 describe('assisted planner workflow', () => {
   it('accepts a valid schedule CSV using common lowercase headers', () => {
@@ -47,5 +53,32 @@ describe('assisted planner workflow', () => {
   it('caps coverage at one hundred percent', () => {
     expect(calculateCoverage(10, 12)).toBe(100);
     expect(calculateCoverage(0, 0)).toBe(0);
+  });
+
+  it('calculates difficulty correctly for standard and constrained sections', () => {
+    const easyTheory = calculateSectionDifficulty({ type: 'TEO', hours_per_week: 2 });
+    expect(easyTheory.level).toBe('easy');
+
+    const hardSimulation = calculateSectionDifficulty({
+      type: 'SIM',
+      hours_per_week: 6,
+      parent_section_id: 'sec-parent',
+      teacher_id: 'tch-1',
+    });
+    expect(hardSimulation.level).toBe('critical');
+    expect(hardSimulation.score).toBeGreaterThanOrEqual(75);
+    expect(hardSimulation.factors.length).toBeGreaterThan(2);
+  });
+
+  it('prioritizes difficult sections in assignment queue', () => {
+    const sections = [
+      { id: 'easy-teo', type: 'TEO', hours_per_week: 2, assigned_slots: 0 },
+      { id: 'hard-sim', type: 'SIM', hours_per_week: 4, assigned_slots: 0, teacher_id: 'tch-1' },
+    ];
+    const queue = buildPrioritizedAssignmentQueue(sections);
+    // Hard section should be placed first
+    expect(queue[0]).toBe('hard-sim');
+    expect(queue.filter(id => id === 'hard-sim').length).toBe(4);
+    expect(queue.filter(id => id === 'easy-teo').length).toBe(2);
   });
 });

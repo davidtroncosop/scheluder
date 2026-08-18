@@ -1,0 +1,284 @@
+import React, { useState, useEffect } from 'react';
+import type { SchedulerSection as Section } from '../model';
+import type { ImportedSubject } from '../../../lib/dataStore';
+
+interface SectionModalProps {
+  section: Section | null;
+  isOpen: boolean;
+  onClose: () => void;
+  allSubjects: ImportedSubject[];
+  availableTeachers: string[];
+  existingTheories: Section[];
+  onSave: (data: {
+    id?: string;
+    nrc: string;
+    subject_id: string;
+    type: string;
+    hours_per_week: number;
+    level: number;
+    teacher_name: string;
+    parent_section_id: string;
+  }) => Promise<void>;
+  onDelete?: (sectionId: string) => Promise<void>;
+}
+
+export const SectionModal: React.FC<SectionModalProps> = ({
+  section,
+  isOpen,
+  onClose,
+  allSubjects,
+  availableTeachers,
+  existingTheories,
+  onSave,
+  onDelete,
+}) => {
+  const [nrc, setNrc] = useState('');
+  const [subjectId, setSubjectId] = useState('');
+  const [type, setType] = useState('TEO');
+  const [hours, setHours] = useState(2);
+  const [level, setLevel] = useState(1);
+  const [teacherName, setTeacherName] = useState('');
+  const [parentSectionId, setParentSectionId] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (section) {
+      setNrc(section.nrc || '');
+      setSubjectId(section.subject_id || '');
+      setType(section.type || 'TEO');
+      setHours(Number(section.hours_per_week || 2));
+      setLevel(Number(section.level || 1));
+      setTeacherName(section.teacher_name || '');
+      setParentSectionId(section.parent_section_id || '');
+    } else {
+      setNrc('');
+      setSubjectId(allSubjects[0]?.id || '');
+      setType('TEO');
+      setHours(2);
+      setLevel(1);
+      setTeacherName('');
+      setParentSectionId('');
+    }
+  }, [section, allSubjects]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await onSave({
+        id: section?.id,
+        nrc,
+        subject_id: subjectId,
+        type,
+        hours_per_week: hours,
+        level,
+        teacher_name: teacherName,
+        parent_section_id: type === 'TEO' ? '' : parentSectionId,
+      });
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-150">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              {section ? `Editar Sección NRC ${section.nrc}` : 'Nueva Sección'}
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Configura los datos del ramo y sus dependencias teóricas/prácticas
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+          >
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4 py-4">
+          <div className="grid grid-cols-2 gap-4">
+            {/* NRC */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                NRC *
+              </label>
+              <input
+                type="text"
+                required
+                value={nrc}
+                onChange={(e) => setNrc(e.target.value)}
+                placeholder="Ej: 10423"
+                className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white"
+              />
+            </div>
+
+            {/* Type */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Tipo de Sección
+              </label>
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+                className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white font-semibold"
+              >
+                <option value="TEO">Teoría (TEO)</option>
+                <option value="LAB">Laboratorio (LAB)</option>
+                <option value="TAL">Taller (TAL)</option>
+                <option value="SIM">Simulación (SIM)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Subject */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Asignatura *
+            </label>
+            <select
+              value={subjectId}
+              onChange={(e) => {
+                setSubjectId(e.target.value);
+                const sub = allSubjects.find(s => s.id === e.target.value);
+                if (sub) setLevel(Number(sub.nivel || 1));
+              }}
+              required
+              className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white"
+            >
+              {allSubjects.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.codigo} - {s.nombre} (Nivel {s.nivel})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Parent Section (if practical) */}
+          {type !== 'TEO' && (
+            <div className="bg-primary/5 p-3 rounded-xl border border-primary/20">
+              <label className="block text-xs font-bold text-primary mb-1">
+                Sección Teórica Padre (NRC Teórico) *
+              </label>
+              <select
+                value={parentSectionId}
+                onChange={(e) => setParentSectionId(e.target.value)}
+                required
+                className="w-full text-xs bg-white dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-300 dark:border-slate-700 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white"
+              >
+                <option value="">Seleccionar sección teórica padre...</option>
+                {existingTheories
+                  .filter(t => !section || t.id !== section.id)
+                  .map(t => (
+                    <option key={t.id} value={t.id}>
+                      NRC {t.nrc} - {t.subject_name || t.subject_code}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-[11px] text-slate-500 mt-1">
+                La práctica nunca se solapará en el mismo horario con su teoría padre.
+              </p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* Hours */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Horas / Semana
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="12"
+                value={hours}
+                onChange={(e) => setHours(parseInt(e.target.value) || 2)}
+                className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white"
+              />
+            </div>
+
+            {/* Level */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Nivel / Semestre
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="12"
+                value={level}
+                onChange={(e) => setLevel(parseInt(e.target.value) || 1)}
+                className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white"
+              />
+            </div>
+          </div>
+
+          {/* Teacher */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Docente Asignado
+            </label>
+            <select
+              value={teacherName}
+              onChange={(e) => setTeacherName(e.target.value)}
+              className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white"
+            >
+              <option value="">Sin docente asignado</option>
+              {availableTeachers.map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="pt-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-800">
+            {section && onDelete ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (window.confirm('¿Eliminar esta sección?')) {
+                    setBusy(true);
+                    try {
+                      await onDelete(section.id);
+                      onClose();
+                    } finally {
+                      setBusy(false);
+                    }
+                  }
+                }}
+                disabled={busy}
+                className="text-xs text-rose-600 dark:text-rose-400 font-bold hover:underline"
+              >
+                Eliminar Sección
+              </button>
+            ) : <div />}
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={busy}
+                className="px-4 py-1.5 text-xs font-bold bg-primary text-white hover:bg-primary/90 rounded-lg shadow-xs"
+              >
+                {busy ? 'Guardando...' : 'Guardar Sección'}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};

@@ -256,6 +256,20 @@ class SchedulerAPI {
         });
     }
 
+    async createSection(section: Record<string, unknown>): Promise<{ id: string }> {
+        return this.request<{ id: string }>('/sections', {
+            method: 'POST',
+            body: JSON.stringify(section),
+        });
+    }
+
+    async updateSection(id: string, section: Record<string, unknown>): Promise<{ success: boolean }> {
+        return this.request<{ success: boolean }>(`/sections/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(section),
+        });
+    }
+
     async deleteSection(id: string): Promise<{ success: boolean }> {
         return this.request(`/sections/${id}`, { method: 'DELETE' });
     }
@@ -314,6 +328,10 @@ class SchedulerAPI {
         return this.request<{ success: boolean }>(`/schedule/${assignmentId}`, {
             method: 'DELETE',
         });
+    }
+
+    async deleteAssignment(assignmentId: string): Promise<{ success: boolean }> {
+        return this.unassignSection(assignmentId);
     }
 
     async updateAssignment(id: string, changes: Record<string, unknown>): Promise<{ success: boolean }> {

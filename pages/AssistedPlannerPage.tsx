@@ -7,7 +7,9 @@ import api from '../services/api';
 import { parseCsv, type CsvRow } from '../features/imports/csv';
 import {
   buildAssignmentQueue,
+  buildPrioritizedAssignmentQueue,
   calculateCoverage,
+  calculateSectionDifficulty,
   validateScheduleImport,
   type AssistedImportValidation,
 } from '../features/assisted-planner/workflow';
@@ -130,7 +132,7 @@ const AssistedPlannerPage: React.FC = () => {
     if (!sections.length || !selectedPeriod) return;
     setBusy(true);
     setNotice(null);
-    const queue = buildAssignmentQueue(sections);
+    const queue = buildPrioritizedAssignmentQueue(sections);
     let completed = 0;
     let failed = 0;
     setGenerationProgress({ done: 0, total: queue.length, failed: 0 });
