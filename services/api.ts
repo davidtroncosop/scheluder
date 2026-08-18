@@ -12,6 +12,9 @@ import type {
     HealthMetrics,
     LoginResponse,
     AdminOverview,
+    TeacherSubject,
+    SubjectRoomCompatibility,
+    SubjectPrerequisite,
 } from '../types';
 import { session, type SessionUser } from '../lib/session';
 
@@ -400,6 +403,56 @@ class SchedulerAPI {
 
     async getHealthMetrics(): Promise<HealthMetrics> {
         return this.request<HealthMetrics>('/metrics/health');
+    }
+
+    // =============================================
+    // ACADEMIC CONSTRAINTS & INTERMEDIATE RELATIONS
+    // =============================================
+
+    async getTeacherSubjects(teacherId: string): Promise<TeacherSubject[]> {
+        return this.request<TeacherSubject[]>(`/teachers/${teacherId}/subjects`);
+    }
+
+    async updateTeacherSubjects(
+        teacherId: string,
+        subjects: Array<{ subject_id: string; priority?: number; max_sections?: number }>
+    ): Promise<{ success: boolean; count: number }> {
+        return this.request<{ success: boolean; count: number }>(`/teachers/${teacherId}/subjects`, {
+            method: 'PUT',
+            body: JSON.stringify({ subjects }),
+        });
+    }
+
+    async getSubjectTeachers(subjectId: string): Promise<TeacherSubject[]> {
+        return this.request<TeacherSubject[]>(`/subjects/${subjectId}/teachers`);
+    }
+
+    async getSubjectRooms(subjectId: string): Promise<SubjectRoomCompatibility[]> {
+        return this.request<SubjectRoomCompatibility[]>(`/subjects/${subjectId}/rooms`);
+    }
+
+    async updateSubjectRooms(
+        subjectId: string,
+        rooms: Array<{ room_id: string; requirement_level?: 'EXCLUSIVE' | 'PREFERRED' | 'ALLOWED' }>
+    ): Promise<{ success: boolean; count: number }> {
+        return this.request<{ success: boolean; count: number }>(`/subjects/${subjectId}/rooms`, {
+            method: 'PUT',
+            body: JSON.stringify({ rooms }),
+        });
+    }
+
+    async getSubjectPrerequisites(subjectId: string): Promise<SubjectPrerequisite[]> {
+        return this.request<SubjectPrerequisite[]>(`/subjects/${subjectId}/prerequisites`);
+    }
+
+    async updateSubjectPrerequisites(
+        subjectId: string,
+        prerequisites: Array<{ prerequisite_id: string; type?: 'MANDATORY' | 'COREQUISITE' | 'RECOMMENDED' }>
+    ): Promise<{ success: boolean; count: number }> {
+        return this.request<{ success: boolean; count: number }>(`/subjects/${subjectId}/prerequisites`, {
+            method: 'PUT',
+            body: JSON.stringify({ prerequisites }),
+        });
     }
 }
 

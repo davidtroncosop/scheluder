@@ -178,6 +178,39 @@ export interface ScoreBreakdown {
   points: number;
 }
 
+// Intermediate Relationship Types (Academic Constraints)
+export interface TeacherSubject {
+  teacher_id: string;
+  subject_id: string;
+  priority: number;
+  max_sections: number;
+  subject_name?: string;
+  subject_code?: string;
+  subject_level?: number;
+  teacher_name?: string;
+  teacher_rut?: string;
+}
+
+export interface SubjectRoomCompatibility {
+  subject_id: string;
+  room_id: string;
+  requirement_level: 'EXCLUSIVE' | 'PREFERRED' | 'ALLOWED';
+  room_name?: string;
+  room_type?: string;
+  room_capacity?: number;
+  subject_name?: string;
+  subject_code?: string;
+}
+
+export interface SubjectPrerequisite {
+  subject_id: string;
+  prerequisite_id: string;
+  type: 'MANDATORY' | 'COREQUISITE' | 'RECOMMENDED';
+  prerequisite_name?: string;
+  prerequisite_code?: string;
+  prerequisite_level?: number;
+}
+
 // API Response Types
 export interface HealthMetrics {
   total_slots_required: number;

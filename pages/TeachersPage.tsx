@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MainLayout } from '../components/MainLayout';
 import * as dataStore from '../lib/dataStore';
 import { OFFLINE_DEMO_ENABLED } from '../lib/runtime';
 import api from '../services/api';
 import { useAcademicPeriods } from '../lib/academicPeriods';
+import type { Subject, TeacherSubject } from '../types';
 
 interface Teacher {
   id: string;
@@ -26,8 +27,6 @@ interface Availability {
   status: 'available' | 'preference' | 'blocked';
 }
 
-const API_BASE = '/api';
-
 const TeachersPage: React.FC = () => {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
@@ -35,6 +34,14 @@ const TeachersPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const { selectedPeriod, setSelectedPeriod } = useAcademicPeriods();
+
+  // New Tab State for Right Panel
+  const [activeTab, setActiveTab] = useState<'availability' | 'subjects'>('availability');
+  const [allSubjects, setAllSubjects] = useState<Subject[]>([]);
+  const [teacherSubjects, setTeacherSubjects] = useState<TeacherSubject[]>([]);
+  const [selectedSubjectToAdd, setSelectedSubjectToAdd] = useState('');
+  const [selectedPriority, setSelectedPriority] = useState<number>(1);
+  const [savingSubjects, setSavingSubjects] = useState(false);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -47,11 +54,15 @@ const TeachersPage: React.FC = () => {
     is_active: true,
   });
 
-  // Fetch teachers
+  // Fetch teachers & subjects
   const loadTeachersList = async () => {
     setLoading(true);
     try {
-      const remoteTeachers = await api.getTeachers();
+      const [remoteTeachers, remoteSubjects] = await Promise.all([
+        api.getTeachers(),
+        api.getSubjects().catch(() => []),
+      ]);
+      setAllSubjects(remoteSubjects as Subject[]);
       if (remoteTeachers.length > 0) {
         const convertedTeachers = remoteTeachers.map(t => ({ ...t, is_active: Boolean(t.is_active), availability_raw: {} })) as Teacher[];
         setTeachers(convertedTeachers);
@@ -59,7 +70,7 @@ const TeachersPage: React.FC = () => {
           id: t.id, nombre: t.name, email: t.email || '', tipo_contrato: t.contract_type,
           max_horas: t.max_hours_per_week,
         })));
-        if (!selectedTeacherId) setSelectedTeacherId(convertedTeachers[0].id);
+        if (!selectedTeacherId && convertedTeachers[0]) setSelectedTeacherId(convertedTeachers[0].id);
         setLoading(false);
         return;
       }
@@ -98,17 +109,7 @@ const TeachersPage: React.FC = () => {
       { id: 'tch-003', name: 'Klgo. Roberto Soto', email: 'r.soto@edu.cl', rut: '10.111.222-3', contract_type: 'Honorarios', max_hours_per_week: 12, is_active: true, avatar_url: null, availability_raw: {} },
     ];
     setTeachers(mock);
-    // Write back to dataStore to initialize
-    const convertedMock: dataStore.ImportedTeacher[] = mock.map(m => ({
-      id: m.id,
-      nombre: m.name,
-      email: m.email || '',
-      tipo_contrato: m.contract_type,
-      max_horas: m.max_hours_per_week,
-      availability: {}
-    }));
-    dataStore.saveTeachers(convertedMock);
-    if (!selectedTeacherId) setSelectedTeacherId(mock[0].id);
+    setSelectedTeacherId(mock[0].id);
     setLoading(false);
   };
 
@@ -116,60 +117,75 @@ const TeachersPage: React.FC = () => {
     loadTeachersList();
   }, []);
 
-  // Fetch availability when teacher is selected
-  useEffect(() => {
-    if (!selectedTeacherId) {
-      setAvailability([]);
-      return;
+  // Fetch teacher qualified subjects
+  const loadTeacherSubjects = useCallback(async (teacherId: string) => {
+    try {
+      const subjects = await api.getTeacherSubjects(teacherId);
+      setTeacherSubjects(subjects);
+    } catch {
+      setTeacherSubjects([]);
     }
+  }, []);
+
+  // Fetch teacher availability and qualified subjects
+  useEffect(() => {
+    if (!selectedTeacherId) return;
     setLoadingAvailability(true);
 
-    const currentTeacherFull = teachers.find(t => t.id === selectedTeacherId);
-    if (currentTeacherFull) {
-      const raw = currentTeacherFull.availability_raw || {};
-      const formatted: Availability[] = [];
+    loadTeacherSubjects(selectedTeacherId);
 
-      // Convert "slotId-day" map to Availability array
-      Object.entries(raw).forEach(([key, status]) => {
-        const [slotId, dayStr] = key.split('-');
-        const day = parseInt(dayStr);
-        if (slotId && !isNaN(day)) {
-          formatted.push({
-            day_of_week: day,
-            timeslot_id: slotId,
-            label: slotId.toUpperCase(),
-            start_time: '', 
-            end_time: '',
-            status: status as any
-          });
-        }
-      });
+    const currentTeacher = teachers.find(t => t.id === selectedTeacherId);
 
-      if (formatted.length > 0) {
-        setAvailability(formatted);
+    // 1. Try remote DB
+    api.getTeacher(selectedTeacherId).then(data => {
+      if (data && (data as any).availability && Array.isArray((data as any).availability)) {
+        setAvailability((data as any).availability);
         setLoadingAvailability(false);
-        return;
+      } else {
+        throw new Error('Sin disponibilidad remota');
       }
-    }
+    }).catch(() => {
+      // 2. Fallback to LocalStorage
+      if (currentTeacher && currentTeacher.availability_raw) {
+        const raw = currentTeacher.availability_raw;
+        const parsed: Availability[] = [];
+        Object.keys(raw).forEach(key => {
+          const parts = key.split('-');
+          if (parts.length >= 2) {
+            const slotId = parts[0];
+            const day = parseInt(parts[1], 10);
+            parsed.push({
+              day_of_week: day,
+              timeslot_id: slotId,
+              label: slotId.toUpperCase(),
+              start_time: '08:00',
+              end_time: '09:20',
+              status: raw[key] as Availability['status']
+            });
+          }
+        });
+        if (parsed.length > 0) {
+          setAvailability(parsed);
+          setLoadingAvailability(false);
+          return;
+        }
+      }
 
-    // Default availability
-    setAvailability([
-      { day_of_week: 2, timeslot_id: 'ts-m2', label: 'M2', start_time: '09:40', end_time: '11:00', status: 'blocked' },
-      { day_of_week: 5, timeslot_id: 'ts-t1', label: 'T1', start_time: '14:40', end_time: '16:00', status: 'blocked' },
-      { day_of_week: 1, timeslot_id: 'ts-m1', label: 'M1', start_time: '08:00', end_time: '09:20', status: 'preference' },
-    ]);
-    setLoadingAvailability(false);
-  }, [selectedTeacherId, teachers]);
+      // Default availability
+      setAvailability([
+        { day_of_week: 2, timeslot_id: 'ts-m2', label: 'M2', start_time: '09:40', end_time: '11:00', status: 'blocked' },
+        { day_of_week: 5, timeslot_id: 'ts-t1', label: 'T1', start_time: '14:40', end_time: '16:00', status: 'blocked' },
+        { day_of_week: 1, timeslot_id: 'ts-m1', label: 'M1', start_time: '08:00', end_time: '09:20', status: 'preference' },
+      ]);
+      setLoadingAvailability(false);
+    });
+  }, [loadTeacherSubjects, selectedTeacherId, teachers]);
 
   const selectedTeacher = teachers.find(t => t.id === selectedTeacherId);
   const timeHours = [8, 9, 10, 11, 12, 13, 14, 15, 16];
 
   const getSlotStatus = (hour: number, dayIndex: number): 'available' | 'preference' | 'blocked' => {
     if (!Array.isArray(availability)) return 'available';
-    
-    // In our system, modules are typically divided into 1.5 hr slots or blocks.
-    // Let's calculate standard timeslots corresponding to hour ranges.
-    // M1: 08:00 - 09:20, M2: 09:30 - 10:50, etc.
     const currentSlotId = `ts-${hour < 14 ? 'm' + (Math.floor((hour - 8) / 1.5) + 1) : 't' + (Math.floor((hour - 14) / 1.5) + 1)}`;
     const day = dayIndex + 1;
 
@@ -183,7 +199,6 @@ const TeachersPage: React.FC = () => {
     return slot?.status || 'available';
   };
 
-  // Toggle Availability Cell Click
   const handleCellClick = (hour: number, dayIndex: number) => {
     if (!selectedTeacherId) return;
     const currentSlotId = `ts-${hour < 14 ? 'm' + (Math.floor((hour - 8) / 1.5) + 1) : 't' + (Math.floor((hour - 14) / 1.5) + 1)}`;
@@ -215,7 +230,6 @@ const TeachersPage: React.FC = () => {
     });
   };
 
-  // Save Availability to local storage
   const handleSaveAvailability = async () => {
     if (!selectedTeacherId) return;
 
@@ -245,10 +259,65 @@ const TeachersPage: React.FC = () => {
         }
       }
       dataStore.addOrUpdateTeacher(updatedTeacherData);
-      
-      // Update teachers list local state
       setTeachers(prev => prev.map(t => t.id === selectedTeacherId ? { ...t, availability_raw: rawAvailability } : t));
       alert(`✅ Disponibilidad de ${currentTeacher.name} guardada exitosamente.`);
+    }
+  };
+
+  // Add a qualified subject
+  const handleAddQualifiedSubject = async () => {
+    if (!selectedTeacherId || !selectedSubjectToAdd) return;
+    const exists = teacherSubjects.some(ts => ts.subject_id === selectedSubjectToAdd);
+    if (exists) {
+      alert('Esta asignatura ya está habilitada para este docente');
+      return;
+    }
+    const targetSub = allSubjects.find(s => s.id === selectedSubjectToAdd);
+    const updated = [
+      ...teacherSubjects,
+      {
+        teacher_id: selectedTeacherId,
+        subject_id: selectedSubjectToAdd,
+        priority: selectedPriority,
+        max_sections: 4,
+        subject_name: targetSub?.name,
+        subject_code: targetSub?.code,
+        subject_level: targetSub?.level,
+      }
+    ];
+
+    setSavingSubjects(true);
+    try {
+      await api.updateTeacherSubjects(selectedTeacherId, updated.map(u => ({
+        subject_id: u.subject_id,
+        priority: u.priority,
+        max_sections: u.max_sections,
+      })));
+      setTeacherSubjects(updated);
+      setSelectedSubjectToAdd('');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'No fue posible vincular la asignatura');
+    } finally {
+      setSavingSubjects(false);
+    }
+  };
+
+  // Remove a qualified subject
+  const handleRemoveQualifiedSubject = async (subjectId: string) => {
+    if (!selectedTeacherId) return;
+    const updated = teacherSubjects.filter(ts => ts.subject_id !== subjectId);
+    setSavingSubjects(true);
+    try {
+      await api.updateTeacherSubjects(selectedTeacherId, updated.map(u => ({
+        subject_id: u.subject_id,
+        priority: u.priority,
+        max_sections: u.max_sections,
+      })));
+      setTeacherSubjects(updated);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'No fue posible eliminar la asignatura');
+    } finally {
+      setSavingSubjects(false);
     }
   };
 
@@ -321,11 +390,8 @@ const TeachersPage: React.FC = () => {
         }
       }
       dataStore.deleteTeacher(id);
-      
-      // Update list
       const updated = teachers.filter(t => t.id !== id);
       setTeachers(updated);
-
       if (selectedTeacherId === id) {
         setSelectedTeacherId(updated.length > 0 ? updated[0].id : null);
       }
@@ -359,8 +425,8 @@ const TeachersPage: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-fade-in">
           {/* Teachers List */}
-          <div className="lg:col-span-7">
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden h-[600px] flex flex-col">
+          <div className="lg:col-span-6">
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden h-[640px] flex flex-col">
               <div className="overflow-y-auto grow custom-scrollbar">
                 <table className="w-full text-left border-collapse">
                   <thead className="sticky top-0 z-10">
@@ -380,20 +446,21 @@ const TeachersPage: React.FC = () => {
                       >
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-3">
-                            <div className="size-9 rounded-full bg-gradient-to-br from-primary/20 to-blue-500/20 flex items-center justify-center text-primary font-bold text-xs">
-                              {(t.name || '??').split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase()}
+                            <div className="size-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs">
+                              {t.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                             </div>
                             <div>
                               <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight">{t.name}</p>
-                              <p className="text-[10px] text-slate-500 leading-tight">{t.email || 'Sin email'}</p>
+                              <p className="text-xs text-slate-400">{t.email || t.rut || 'Sin correo'}</p>
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${t.contract_type === 'Planta' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' :
-                            t.contract_type === 'Media Jornada' ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400' :
-                              'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                            }`}>
+                        <td className="py-3 px-4 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                            t.contract_type === 'Planta' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' :
+                            t.contract_type === 'Media Jornada' ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
+                            'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                          }`}>
                             {t.contract_type}
                           </span>
                         </td>
@@ -432,79 +499,198 @@ const TeachersPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Availability Panel */}
-          <div className="lg:col-span-5 h-[600px] flex flex-col">
+          {/* Right Panel: Tabs for Availability & Qualified Subjects */}
+          <div className="lg:col-span-6 h-[640px] flex flex-col">
             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-full overflow-hidden">
-              <div className="p-4 border-b border-slate-100 dark:border-slate-800">
-                <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-lg">edit_calendar</span>
-                  Disponibilidad Semanal
-                </h2>
-                <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">
-                  Editando: <span className="text-primary">{selectedTeacher?.name || 'Seleccione un docente'}</span>
-                </p>
+              {/* Header with Tabs */}
+              <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                    {selectedTeacher?.name || 'Seleccione un docente'}
+                  </h2>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
+                    {selectedTeacher?.contract_type} · Max {selectedTeacher?.max_hours_per_week} hrs/sem
+                  </p>
+                </div>
+                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('availability')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      activeTab === 'availability'
+                        ? 'bg-white dark:bg-slate-900 text-primary shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-base">edit_calendar</span>
+                    Disponibilidad
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('subjects')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      activeTab === 'subjects'
+                        ? 'bg-white dark:bg-slate-900 text-primary shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-base">school</span>
+                    Asignaturas ({teacherSubjects.length})
+                  </button>
+                </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
-                {loadingAvailability ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin size-6 border-2 border-primary border-t-transparent rounded-full"></div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-6 gap-[1px] bg-slate-100 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-lg overflow-hidden shrink-0">
-                    <div className="bg-slate-50 dark:bg-slate-900/50 p-2 text-[10px] font-black text-slate-400 text-center flex items-center justify-center">HORA</div>
-                    {['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE'].map(day => (
-                      <div key={day} className="bg-slate-50 dark:bg-slate-900/50 p-2 text-[10px] font-black text-slate-950 dark:text-white text-center">{day}</div>
-                    ))}
+              {/* Tab 1: Availability Grid */}
+              {activeTab === 'availability' && (
+                <>
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+                    {loadingAvailability ? (
+                      <div className="flex items-center justify-center py-12">
+                        <div className="animate-spin size-6 border-2 border-primary border-t-transparent rounded-full"></div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-6 gap-[1px] bg-slate-100 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-lg overflow-hidden shrink-0">
+                        <div className="bg-slate-50 dark:bg-slate-900/50 p-2 text-[10px] font-black text-slate-400 text-center flex items-center justify-center">HORA</div>
+                        {['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE'].map(day => (
+                          <div key={day} className="bg-slate-50 dark:bg-slate-900/50 p-2 text-[10px] font-black text-slate-950 dark:text-white text-center">{day}</div>
+                        ))}
 
-                    {timeHours.map((hour) => (
-                      <React.Fragment key={hour}>
-                        <div className="bg-white dark:bg-slate-900 p-2 text-[10px] font-bold text-slate-400 flex items-center justify-center font-mono select-none">
-                          {hour < 10 ? `0${hour}:00` : `${hour}:00`}
-                        </div>
-                        {[0, 1, 2, 3, 4].map((day) => {
-                          const status = getSlotStatus(hour, day);
-                          return (
-                            <div
-                              key={day}
-                              onClick={() => handleCellClick(hour, day)}
-                              className={`h-10 flex items-center justify-center transition-all cursor-pointer border border-transparent hover:border-primary/40 ${status === 'blocked' ? 'bg-red-500/10 text-red-500 dark:bg-red-500/20' :
-                                status === 'preference' ? 'bg-emerald-500/10 text-emerald-500 dark:bg-emerald-500/20' :
-                                  'bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800'
-                                }`}
-                              title="Haga clic para cambiar disponibilidad (Disponible -> Preferida -> Bloqueada)"
-                            >
-                              {status === 'blocked' && <span className="material-symbols-outlined text-sm select-none">block</span>}
-                              {status === 'preference' && <span className="material-symbols-outlined text-sm select-none">favorite</span>}
+                        {timeHours.map((hour) => (
+                          <React.Fragment key={hour}>
+                            <div className="bg-white dark:bg-slate-900 p-2 text-[10px] font-bold text-slate-400 flex items-center justify-center font-mono select-none">
+                              {hour < 10 ? `0${hour}:00` : `${hour}:00`}
                             </div>
-                          );
-                        })}
-                      </React.Fragment>
-                    ))}
+                            {[0, 1, 2, 3, 4].map((day) => {
+                              const status = getSlotStatus(hour, day);
+                              return (
+                                <div
+                                  key={day}
+                                  onClick={() => handleCellClick(hour, day)}
+                                  className={`h-10 flex items-center justify-center transition-all cursor-pointer border border-transparent hover:border-primary/40 ${status === 'blocked' ? 'bg-red-500/10 text-red-500 dark:bg-red-500/20' :
+                                    status === 'preference' ? 'bg-emerald-500/10 text-emerald-500 dark:bg-emerald-500/20' :
+                                      'bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                    }`}
+                                  title="Haga clic para cambiar disponibilidad (Disponible -> Preferida -> Bloqueada)"
+                                >
+                                  {status === 'blocked' && <span className="material-symbols-outlined text-sm select-none">block</span>}
+                                  {status === 'preference' && <span className="material-symbols-outlined text-sm select-none">favorite</span>}
+                                </div>
+                              );
+                            })}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div className="p-4 bg-slate-50/50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-4 items-center justify-between">
-                <div className="flex gap-4">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase select-none">
-                    <span className="size-2 rounded-full bg-red-500"></span> Bloqueado
+                  <div className="p-4 bg-slate-50/50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-4 items-center justify-between">
+                    <div className="flex gap-4">
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase select-none">
+                        <span className="size-2 rounded-full bg-red-500"></span> Bloqueado
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase select-none">
+                        <span className="size-2 rounded-full bg-emerald-500"></span> Preferencia
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase select-none">
+                        <span className="size-2 rounded bg-slate-200 dark:bg-slate-700"></span> Disponible
+                      </div>
+                    </div>
+                    <button 
+                      onClick={handleSaveAvailability}
+                      className="bg-primary text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-primary-dark transition-all shadow-sm"
+                      disabled={!selectedTeacherId}
+                    >
+                      Guardar Disponibilidad
+                    </button>
                   </div>
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase select-none">
-                    <span className="size-2 rounded-full bg-emerald-500"></span> Preferencia
+                </>
+              )}
+
+              {/* Tab 2: Qualified Subjects (Idoneidad Docente) */}
+              {activeTab === 'subjects' && (
+                <div className="flex-1 flex flex-col overflow-hidden p-4">
+                  <div className="mb-4">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">Asignaturas que puede dictar</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">El optimizador y el planificador solo sugerirán a este docente para las asignaturas habilitadas aquí.</p>
                   </div>
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase select-none">
-                    <span className="size-2 rounded bg-slate-200 dark:bg-slate-700"></span> Disponible
+
+                  {/* Add Subject Bar */}
+                  <div className="flex flex-col sm:flex-row gap-2 mb-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                    <select
+                      value={selectedSubjectToAdd}
+                      onChange={e => setSelectedSubjectToAdd(e.target.value)}
+                      className="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white"
+                    >
+                      <option value="">Selecciona una asignatura para habilitar...</option>
+                      {allSubjects
+                        .filter(s => !teacherSubjects.some(ts => ts.subject_id === s.id))
+                        .map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.code} · {s.name} (Nivel {s.level})
+                          </option>
+                        ))}
+                    </select>
+                    <select
+                      value={selectedPriority}
+                      onChange={e => setSelectedPriority(Number(e.target.value))}
+                      className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white"
+                    >
+                      <option value={1}>Titular / Prioridad Alta</option>
+                      <option value={2}>Suplente / Respaldo</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleAddQualifiedSubject}
+                      disabled={!selectedSubjectToAdd || savingSubjects}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary-dark disabled:opacity-40"
+                    >
+                      <span className="material-symbols-outlined text-base">add</span>
+                      Habilitar
+                    </button>
+                  </div>
+
+                  {/* Qualified Subjects List */}
+                  <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl">
+                    {teacherSubjects.length === 0 ? (
+                      <div className="p-8 text-center text-xs text-slate-400">
+                        <span className="material-symbols-outlined text-3xl text-slate-300 dark:text-slate-600 block mb-2">school</span>
+                        No tiene asignaturas habilitadas aún. Selecciona una arriba para habilitarlo.
+                      </div>
+                    ) : (
+                      teacherSubjects.map(ts => (
+                        <div key={ts.subject_id} className="flex items-center justify-between p-3 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <span className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                              {ts.subject_code?.slice(0, 4) || 'SUB'}
+                            </span>
+                            <div>
+                              <p className="text-xs font-bold text-slate-900 dark:text-white">{ts.subject_name || ts.subject_code}</p>
+                              <p className="text-[10px] text-slate-400">Código: {ts.subject_code} · Nivel {ts.subject_level}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              ts.priority === 1
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300'
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                            }`}>
+                              {ts.priority === 1 ? 'Titular' : 'Suplente'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveQualifiedSubject(ts.subject_id)}
+                              className="size-7 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center justify-center transition-colors"
+                              title="Deshabilitar asignatura"
+                            >
+                              <span className="material-symbols-outlined text-base">close</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
-                <button 
-                  onClick={handleSaveAvailability}
-                  className="bg-primary text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-primary-dark transition-all shadow-sm"
-                  disabled={!selectedTeacherId}
-                >
-                  Guardar Disponibilidad
-                </button>
-              </div>
+              )}
             </div>
           </div>
         </div>

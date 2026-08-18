@@ -248,6 +248,38 @@ export async function validateAssignment(db: D1Database, params: {
         });
     }
 
+    // Specific Room Compatibility constraint
+    if (section.subject_id) {
+        const roomReqs = await db.prepare(`
+            SELECT room_id, requirement_level FROM subject_room_compatibilities WHERE subject_id = ?
+        `).bind(section.subject_id).all();
+        if (roomReqs.results.length > 0) {
+            const matching = roomReqs.results.find((r: any) => r.room_id === params.room_id);
+            const hasExclusive = roomReqs.results.some((r: any) => r.requirement_level === 'EXCLUSIVE');
+            if (hasExclusive && !matching) {
+                conflicts.push({
+                    type: 'WARNING',
+                    rule_code: 'ROOM_NOT_COMPATIBLE',
+                    description: `Esta asignatura requiere una de sus salas exclusivas designadas`,
+                });
+            }
+        }
+    }
+
+    // Teacher Qualification constraint
+    if (teacherId && section.subject_id) {
+        const qualified = await db.prepare(`
+            SELECT subject_id FROM teacher_subjects WHERE teacher_id = ?
+        `).bind(teacherId).all();
+        if (qualified.results.length > 0 && !qualified.results.some((s: any) => s.subject_id === section.subject_id)) {
+            conflicts.push({
+                type: 'WARNING',
+                rule_code: 'TEACHER_NOT_QUALIFIED',
+                description: `El docente no está habilitado en la especialidad de esta asignatura`,
+            });
+        }
+    }
+
     return conflicts;
 }
 
