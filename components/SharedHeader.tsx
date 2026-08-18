@@ -25,10 +25,9 @@ const SharedHeader: React.FC<SharedHeaderProps> = ({ title }) => {
             <span className="material-symbols-outlined text-[18px]">notifications</span>
             <span className="material-symbols-outlined text-[18px]">settings</span>
           </div>
-          <div 
-            className="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 border border-border-light dark:border-border-dark" 
-            style={{backgroundImage: 'url("https://picsum.photos/100/100")'}}
-          ></div>
+          <div className="flex size-9 items-center justify-center rounded-full bg-primary text-white font-bold text-xs shadow-xs">
+            U
+          </div>
         </div>
       </div>
     </header>
