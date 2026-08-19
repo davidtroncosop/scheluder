@@ -712,14 +712,26 @@ const AssistedPlannerPage: React.FC = () => {
               </div>
             )}
 
+            {/* Academic Responsibility & Audit Disclaimer */}
+            <div className="mt-6 p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-950/30 border border-amber-500/30 text-xs text-amber-950 dark:text-amber-200 space-y-1.5">
+              <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-300">
+                <span className="material-symbols-outlined text-base">verified_user</span>
+                <span>Aviso de Responsabilidad y Auditoría Académica (Disclaimer)</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300/90">
+                Esta propuesta es una recomendación matemática generada por el motor heurístico para optimizar el uso de salas y evitar topes de horario. 
+                <strong> La coordinación académica o dirección de carrera debe auditar y validar los acuerdos docentes, requerimientos de equipamiento y criterios pedagógicos antes de su publicación oficial definitiva.</strong>
+              </p>
+            </div>
+
             {/* Publishing Bar */}
-            <div className="mt-7 flex flex-col gap-3 rounded-2xl bg-[#0b2138] p-5 text-white sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-6 flex flex-col gap-3 rounded-2xl bg-[#0b2138] p-5 text-white sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-base font-black">
                   {scheduleStatus === 'published' ? '✅ Horario Publicado Oficialmente' : canPublish ? '✨ Todo listo para publicar' : '⚠️ Pendiente de completar cobertura'}
                 </p>
                 <p className="mt-1 text-xs text-slate-300">
-                  {canPublish ? 'Al publicar, los docentes y estudiantes verán esta versión en el portal.' : 'Puedes continuar ajustando en el planificador visual o publicar cuando la cobertura sea completa.'}
+                  {canPublish ? 'Al publicar, los docentes y estudiantes verán esta versión en el portal institucional.' : 'Puedes continuar ajustando en el planificador visual o publicar cuando la cobertura sea completa.'}
                 </p>
               </div>
               <div className="flex gap-2">

@@ -50,6 +50,11 @@ const SchedulerPage: React.FC = () => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showAuditPanel, setShowAuditPanel] = useState(false);
   const [showConflictsPanel, setShowConflictsPanel] = useState(false);
+  const [proposalResult, setProposalResult] = useState<{
+    completed: number;
+    failed: number;
+    total: number;
+  } | null>(null);
   const [, setSelectedConflict] = useState<Conflict | null>(null);
   const [allSubjects, setAllSubjects] = useState<dataStore.ImportedSubject[]>([]);
 
@@ -500,11 +505,16 @@ const SchedulerPage: React.FC = () => {
 
     await loadScheduleData();
     setSaving(false);
+    setProposalResult({
+      completed,
+      failed,
+      total: queue.length,
+    });
     setNotice({
       type: failed ? 'info' : 'success',
       message: failed
         ? `Propuesta generada: ${completed} bloques asignados (${failed} requieren ajuste manual)`
-        : `Propuesta automática completada: ${completed} bloques asignados exitosamente`,
+        : `Propuesta automática completada: ${completed} de ${queue.length} bloques asignados`,
     });
     addAuditEntry('auto-assign', `Generada propuesta automática: ${completed} bloques ubicados`);
   };
@@ -821,6 +831,104 @@ const SchedulerPage: React.FC = () => {
           onClose={() => setShowAuditPanel(false)}
           auditLog={auditLog}
         />
+
+        {/* Proposal Result Modal with Academic Disclaimer */}
+        {proposalResult && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-fade-in">
+            <div className="relative bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 my-auto flex flex-col gap-4">
+              {/* Header */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="size-12 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-2xl">auto_awesome</span>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                      Propuesta de Horario Generada
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Motor de optimización heurística y restricciones académicas
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setProposalResult(null)}
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+                >
+                  <span className="material-symbols-outlined text-lg">close</span>
+                </button>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-3 gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-center">
+                <div>
+                  <div className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
+                    {proposalResult.completed}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Asignados</div>
+                </div>
+                <div>
+                  <div className="text-xl font-extrabold text-slate-800 dark:text-slate-200">
+                    {proposalResult.total}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Requerido</div>
+                </div>
+                <div>
+                  <div className={`text-xl font-extrabold ${proposalResult.failed > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                    {proposalResult.failed}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Pendientes</div>
+                </div>
+              </div>
+
+              {/* Disclaimer Block */}
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-950/30 border border-amber-500/30 text-xs text-amber-950 dark:text-amber-200 space-y-1.5">
+                <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-300">
+                  <span className="material-symbols-outlined text-base">verified_user</span>
+                  <span>Aviso de Responsabilidad y Auditoría (Disclaimer)</span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300/90">
+                  Esta propuesta es una recomendación matemática y heurística generada por el algoritmo para optimizar la distribución horaria sin choques de docentes ni salas. 
+                  <strong> La coordinación académica o dirección de carrera debe auditar y validar los acuerdos docentes, requerimientos de equipamiento y criterios pedagógicos antes de publicar este horario como oficial.</strong>
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setProposalResult(null)}
+                  className="px-4 py-2 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Revisar en la Matriz
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProposalResult(null);
+                    setShowExportModal(true);
+                  }}
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white transition-colors"
+                >
+                  Exportar Borrador
+                </button>
+                {canPublish && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProposalResult(null);
+                      handlePublish();
+                    }}
+                    className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm"
+                  >
+                    Publicar Horario Oficial
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {showConflictsPanel && (
           <div className="fixed inset-0 z-50 bg-black/40 flex justify-end">
