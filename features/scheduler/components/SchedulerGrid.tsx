@@ -51,20 +51,12 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
   onDeleteAssignment,
   onSlotClick,
 }) => {
-  const [jornadaFilter, setJornadaFilter] = useState<'todas' | 'manana' | 'tarde'>('todas');
+  const [timeScope, setTimeScope] = useState<'week' | 'day'>('week');
+  const [selectedDay, setSelectedDay] = useState<number>(1);
   const [density, setDensity] = useState<'normal' | 'compact'>('normal');
 
-  // Filter timeslots by jornada
-  const filteredTimeslots = timeslots.filter(slot => {
-    const label = (slot.label || '').toUpperCase();
-    const order = Number(slot.order_index || 0);
-    const isManana = label.startsWith('M') || order <= 4;
-    const isTarde = label.startsWith('T') || order > 4;
-
-    if (jornadaFilter === 'manana') return isManana;
-    if (jornadaFilter === 'tarde') return isTarde;
-    return true;
-  });
+  // Sorted timeslots (All blocks are always included)
+  const sortedTimeslots = [...timeslots].sort((a, b) => Number(a.order_index || 0) - Number(b.order_index || 0));
 
   // Helper to filter assignments according to current view mode
   const getFilteredAssignments = () => {
@@ -221,57 +213,74 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
     }
   };
 
+  // Active days list based on timeScope
+  const activeDays = timeScope === 'week' 
+    ? [1, 2, 3, 4, 5] 
+    : [selectedDay];
+
   return (
     <div className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 flex flex-col gap-3">
-      {/* Visual Helper Toolbar (Jornada & Density Controls) */}
+      {/* Top Scope & Density Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
-        {/* Left: Jornada filter */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mr-1">
-            Jornada:
-          </span>
+        {/* Left: Week vs Day View Mode */}
+        <div className="flex items-center gap-2">
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
             <button
               type="button"
-              onClick={() => setJornadaFilter('todas')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
-                jornadaFilter === 'todas'
+              onClick={() => setTimeScope('week')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                timeScope === 'week'
                   ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Todos los Bloques ({timeslots.length})
+              <span className="material-symbols-outlined text-sm">calendar_view_week</span>
+              <span>Vista Semanal (L-V)</span>
             </button>
             <button
               type="button"
-              onClick={() => setJornadaFilter('manana')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
-                jornadaFilter === 'manana'
+              onClick={() => setTimeScope('day')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                timeScope === 'day'
                   ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Mañana (M1 - M4)
-            </button>
-            <button
-              type="button"
-              onClick={() => setJornadaFilter('tarde')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
-                jornadaFilter === 'tarde'
-                  ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              Tarde (T1 - T4)
+              <span className="material-symbols-outlined text-sm">calendar_view_day</span>
+              <span>Vista por Día</span>
             </button>
           </div>
+
+          {/* Day Switcher when in Day View */}
+          {timeScope === 'day' && (
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg animate-fade-in">
+              {dayNames.map((dName, idx) => {
+                const dayNum = idx + 1;
+                return (
+                  <button
+                    key={dayNum}
+                    type="button"
+                    onClick={() => setSelectedDay(dayNum)}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+                      selectedDay === dayNum
+                        ? 'bg-primary text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    {dName}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Right: Density toggle & count */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium hidden md:inline">
-            Mostrando <strong>{filteredTimeslots.length}</strong> de {timeslots.length} bloques
+        {/* Right: Timeslots summary & Density toggle */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium hidden sm:inline">
+            <strong className="text-slate-700 dark:text-slate-300">{sortedTimeslots.length}</strong> bloques horarios ({sortedTimeslots[0]?.label || 'M1'} a {sortedTimeslots[sortedTimeslots.length - 1]?.label || 'T4'})
           </span>
+
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
             <button
               type="button"
@@ -320,30 +329,33 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
       )}
 
       {/* Grid Container */}
-      <div className="min-w-[950px] bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
+      <div className="min-w-[800px] bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
         {/* Table Header with Days */}
-        <div className="grid grid-cols-6 border-b border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 sticky top-0 z-20">
+        <div className={`grid ${timeScope === 'week' ? 'grid-cols-6' : 'grid-cols-4'} border-b border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 sticky top-0 z-20`}>
           <div className="p-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center border-r border-slate-200 dark:border-slate-800">
             Bloque Horario
           </div>
-          {dayNames.map((dayName, index) => (
-            <div
-              key={dayName}
-              className="p-3 text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider text-center border-r border-slate-200 dark:border-slate-800 last:border-r-0"
-            >
-              <span>{dayName}</span>
-              <div className="text-[10px] font-normal text-slate-400">Día {index + 1}</div>
-            </div>
-          ))}
+          {activeDays.map((dayOfWeek) => {
+            const dayName = dayNames[dayOfWeek - 1];
+            return (
+              <div
+                key={dayOfWeek}
+                className={`p-3 text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider text-center border-r border-slate-200 dark:border-slate-800 last:border-r-0 ${timeScope === 'day' ? 'col-span-3' : ''}`}
+              >
+                <div className="text-sm font-extrabold text-slate-900 dark:text-white">{dayName}</div>
+                <div className="text-[10px] font-semibold text-slate-400">Día {dayOfWeek} de la semana</div>
+              </div>
+            );
+          })}
         </div>
 
         {/* Timeslot Rows */}
         <div className="divide-y divide-slate-200 dark:divide-slate-800">
-          {filteredTimeslots.map((slot) => (
+          {sortedTimeslots.map((slot) => (
             <div
               key={slot.id}
-              className={`grid grid-cols-6 transition-all ${
-                density === 'compact' ? 'min-h-[75px]' : 'min-h-[115px]'
+              className={`grid ${timeScope === 'week' ? 'grid-cols-6' : 'grid-cols-4'} transition-all ${
+                density === 'compact' ? 'min-h-[75px]' : timeScope === 'day' ? 'min-h-[130px]' : 'min-h-[115px]'
               }`}
             >
               {/* Timeslot Label */}
@@ -355,7 +367,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
               </div>
 
               {/* Days Columns */}
-              {[1, 2, 3, 4, 5].map((dayOfWeek) => {
+              {activeDays.map((dayOfWeek) => {
                 const cellAssignments = getCellAssignments(dayOfWeek, slot.id);
                 const isTarget = dropTarget?.timeslotId === slot.id && dropTarget?.dayOfWeek === dayOfWeek;
                 const compatibility = getSlotCompatibility(dayOfWeek, slot.id);
@@ -367,7 +379,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                     onDragLeave={onDragLeave}
                     onDrop={(e) => onDrop(e, slot.id, dayOfWeek, 0)}
                     onClick={() => onSlotClick?.(slot.id, dayOfWeek, 0)}
-                    className={`p-1.5 sm:p-2 border-r border-slate-200 dark:border-slate-800 last:border-r-0 transition-all flex flex-col gap-1.5 relative ${
+                    className={`p-2 border-r border-slate-200 dark:border-slate-800 last:border-r-0 transition-all flex flex-col gap-1.5 relative ${timeScope === 'day' ? 'col-span-3' : ''} ${
                       isTarget
                         ? 'bg-primary/15 ring-2 ring-primary ring-inset z-10'
                         : compatibility
@@ -377,7 +389,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                   >
                     {/* Compatibility Feasibility Indicator when Dragging */}
                     {compatibility && (
-                      <div className="text-[10px] font-bold py-0.5 px-1.5 rounded flex items-center justify-between gap-1 border border-current/20 mb-0.5 shrink-0 backdrop-blur-xs">
+                      <div className="text-[10px] font-bold py-0.5 px-2 rounded flex items-center justify-between gap-1 border border-current/20 mb-0.5 shrink-0 backdrop-blur-xs">
                         <span className="truncate">{compatibility.label}</span>
                         <span className={`size-2 rounded-full shrink-0 ${compatibility.dot}`} />
                       </div>
@@ -391,94 +403,96 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                     )}
 
                     {/* Assigned Cards */}
-                    {cellAssignments.map((assignment) => {
-                      const conflict = getAssignmentConflict(assignment.id);
+                    <div className={`flex flex-col gap-1.5 ${timeScope === 'day' ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2' : ''}`}>
+                      {cellAssignments.map((assignment) => {
+                        const conflict = getAssignmentConflict(assignment.id);
 
-                      return (
-                        <div
-                          key={assignment.id}
-                          className={`group relative p-2 rounded-lg border transition-all shadow-xs hover:shadow-md ${
-                            conflict
-                              ? conflict.type === 'CRITICAL'
+                        return (
+                          <div
+                            key={assignment.id}
+                            className={`group relative p-2.5 rounded-xl border transition-all shadow-xs hover:shadow-md ${
+                              conflict
+                                ? conflict.type === 'CRITICAL'
                                 ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 text-rose-900 dark:text-rose-200 ring-1 ring-rose-400'
                                 : 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 text-amber-900 dark:text-amber-200'
                               : 'bg-white dark:bg-slate-800/90 border-slate-200 dark:border-slate-700 hover:border-primary/50'
-                          }`}
-                        >
-                          {/* Subject Header */}
-                          <div className="flex items-start justify-between gap-1 mb-0.5">
-                            <div className="flex items-center gap-1 flex-wrap">
-                              <span className="font-bold text-xs text-slate-900 dark:text-white leading-tight">
-                                {assignment.subject_name || assignment.subject_code}
-                              </span>
-                              <span className={`px-1.5 py-0.2 rounded text-[9px] uppercase border ${getTypeStyle(assignment.section_type)}`}>
-                                {assignment.section_type || 'TEO'}
-                              </span>
+                            }`}
+                          >
+                            {/* Subject Header */}
+                            <div className="flex items-start justify-between gap-1 mb-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-xs text-slate-900 dark:text-white leading-tight">
+                                  {assignment.subject_name || assignment.subject_code}
+                                </span>
+                                <span className={`px-1.5 py-0.2 rounded text-[9px] uppercase border ${getTypeStyle(assignment.section_type)}`}>
+                                  {assignment.section_type || 'TEO'}
+                                </span>
+                              </div>
+
+                              {/* Actions Dropdown / Delete button */}
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onEditAssignment(assignment);
+                                  }}
+                                  className="p-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 rounded hover:bg-slate-100 dark:hover:bg-slate-700"
+                                  title="Editar asignación y sala"
+                                >
+                                  <span className="material-symbols-outlined text-xs">edit</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteAssignment(assignment.id);
+                                  }}
+                                  className="p-1 text-rose-500 hover:text-rose-700 rounded hover:bg-rose-50 dark:hover:bg-rose-950"
+                                  title="Desasignar del horario"
+                                >
+                                  <span className="material-symbols-outlined text-xs">delete</span>
+                                </button>
+                              </div>
                             </div>
 
-                            {/* Actions Dropdown / Delete button */}
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onEditAssignment(assignment);
-                                }}
-                                className="p-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 rounded hover:bg-slate-100 dark:hover:bg-slate-700"
-                                title="Editar asignación y sala"
-                              >
-                                <span className="material-symbols-outlined text-xs">edit</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDeleteAssignment(assignment.id);
-                                }}
-                                className="p-1 text-rose-500 hover:text-rose-700 rounded hover:bg-rose-50 dark:hover:bg-rose-950"
-                                title="Desasignar del horario"
-                              >
-                                <span className="material-symbols-outlined text-xs">delete</span>
-                              </button>
-                            </div>
-                          </div>
+                            {/* NRC and Details */}
+                            <div className="text-[10px] text-slate-600 dark:text-slate-400 flex flex-col gap-0.5 mt-0.5">
+                              <div className="flex items-center justify-between text-[10px] text-slate-500">
+                                <span>NRC: <strong className="text-slate-800 dark:text-slate-200 font-mono">{assignment.nrc}</strong></span>
+                                <span className="px-1.5 py-0.2 rounded font-black text-[9px] bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                  Nivel {assignment.level || 1}
+                                </span>
+                              </div>
 
-                          {/* NRC and Details */}
-                          <div className="text-[10px] text-slate-600 dark:text-slate-400 flex flex-col gap-0.5 mt-0.5">
-                            <div className="flex items-center justify-between text-[10px] text-slate-500">
-                              <span>NRC: <strong className="text-slate-800 dark:text-slate-200 font-mono">{assignment.nrc}</strong></span>
-                              <span className="px-1.5 py-0.2 rounded font-black text-[9px] bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
-                                Nivel {assignment.level || 1}
-                              </span>
+                              {assignment.teacher_name && (
+                                <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300 truncate font-medium text-[10px]">
+                                  <span className="material-symbols-outlined text-xs text-primary">person</span>
+                                  <span className="truncate">{assignment.teacher_name}</span>
+                                </div>
+                              )}
+
+                              {assignment.room_name && (
+                                <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300 font-semibold text-[10px]">
+                                  <span className="material-symbols-outlined text-xs text-slate-400">meeting_room</span>
+                                  <span>{assignment.room_name}</span>
+                                </div>
+                              )}
                             </div>
 
-                            {assignment.teacher_name && (
-                              <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300 truncate font-medium text-[10px]">
-                                <span className="material-symbols-outlined text-xs text-primary">person</span>
-                                <span className="truncate">{assignment.teacher_name}</span>
+                            {/* Conflict Warning Indicator */}
+                            {conflict && (
+                              <div className={`mt-1 pt-1 border-t text-[10px] font-bold flex items-center gap-1 ${
+                                conflict.type === 'CRITICAL' ? 'border-rose-300 text-rose-700 dark:text-rose-300' : 'border-amber-300 text-amber-700 dark:text-amber-300'
+                              }`}>
+                                <span className="material-symbols-outlined text-xs shrink-0">warning</span>
+                                <span className="truncate">{conflict.description}</span>
                               </div>
                             )}
-
-                            {assignment.room_name && (
-                              <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300 font-semibold text-[10px]">
-                                <span className="material-symbols-outlined text-xs text-slate-400">meeting_room</span>
-                                <span>{assignment.room_name}</span>
-                              </div>
-                            )}
                           </div>
-
-                          {/* Conflict Warning Indicator */}
-                          {conflict && (
-                            <div className={`mt-1 pt-1 border-t text-[10px] font-bold flex items-center gap-1 ${
-                              conflict.type === 'CRITICAL' ? 'border-rose-300 text-rose-700 dark:text-rose-300' : 'border-amber-300 text-amber-700 dark:text-amber-300'
-                            }`}>
-                              <span className="material-symbols-outlined text-xs shrink-0">warning</span>
-                              <span className="truncate">{conflict.description}</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })}
