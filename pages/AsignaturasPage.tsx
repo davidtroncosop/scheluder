@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/MainLayout';
 import * as dataStore from '../lib/dataStore';
 import { OFFLINE_DEMO_ENABLED } from '../lib/runtime';
@@ -350,15 +350,16 @@ const AsignaturasPage: React.FC = () => {
       selectedPeriod={selectedPeriod}
       onPeriodChange={setSelectedPeriod}
       actions={
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <span className="text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700">
-            {subjects.length} asignaturas registradas
+            {subjects.length} asignaturas
           </span>
           <button 
+            type="button"
             onClick={() => openModal()}
-            className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg font-bold hover:bg-primary-dark transition-all shadow-md shadow-primary/20"
+            className="flex items-center gap-1.5 bg-primary text-white px-3.5 py-2 rounded-xl text-xs font-bold hover:bg-primary-dark transition-all shadow-md shadow-primary/20"
           >
-            <span className="material-symbols-outlined">add</span>
+            <span className="material-symbols-outlined text-base">add</span>
             Nueva Asignatura
           </button>
         </div>
@@ -368,9 +369,10 @@ const AsignaturasPage: React.FC = () => {
         {/* Level Filter */}
         <div className="flex gap-2 pb-2 overflow-x-auto custom-scrollbar">
           <button
+            type="button"
             onClick={() => setSelectedLevel(null)}
             className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 ${
-              !selectedLevel ? 'bg-primary text-white shadow-md shadow-primary/20' : 'bg-white dark:bg-slate-800 text-slate-500 border border-slate-100 dark:border-slate-700 hover:bg-slate-50'
+              !selectedLevel ? 'bg-primary text-white shadow-md shadow-primary/20' : 'bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
             }`}
           >
             Todos los niveles
@@ -378,9 +380,10 @@ const AsignaturasPage: React.FC = () => {
           {levels.map(level => (
             <button
               key={level}
+              type="button"
               onClick={() => setSelectedLevel(level)}
               className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 ${
-                selectedLevel === level ? 'bg-primary text-white shadow-md shadow-primary/20' : 'bg-white dark:bg-slate-800 text-slate-500 border border-slate-100 dark:border-slate-700 hover:bg-slate-50'
+                selectedLevel === level ? 'bg-primary text-white shadow-md shadow-primary/20' : 'bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
               }`}
             >
               Nivel {level}
@@ -424,6 +427,7 @@ const AsignaturasPage: React.FC = () => {
 
                   <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-1">
                     <button 
+                      type="button"
                       onClick={() => openModal(subject)}
                       className="size-8 rounded-lg text-slate-400 hover:text-primary hover:bg-primary/5 transition-all flex items-center justify-center"
                       title="Editar Asignatura"
@@ -431,6 +435,7 @@ const AsignaturasPage: React.FC = () => {
                       <span className="material-symbols-outlined text-lg">edit</span>
                     </button>
                     <button 
+                      type="button"
                       onClick={() => handleDeleteSubject(subject.id, subject.name)}
                       className="size-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-500/5 transition-all flex items-center justify-center"
                       title="Eliminar Asignatura"
@@ -454,49 +459,50 @@ const AsignaturasPage: React.FC = () => {
 
       {/* Relational Constraints Modal (Docentes Habilitados, Salas Exclusivas, Prerrequisitos) */}
       {selectedSubjectDetails && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl shadow-2xl p-6 relative overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-fade-in">
+          <div className="relative w-full max-w-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl shadow-2xl p-5 sm:p-7 my-auto max-h-[90vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-              <div>
+              <div className="min-w-0 pr-3">
                 <span className="text-[10px] font-black uppercase tracking-wider text-primary">Configuración Académica</span>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
                   {selectedSubjectDetails.name} ({selectedSubjectDetails.code})
                 </h3>
               </div>
               <button 
+                type="button"
                 onClick={() => setSelectedSubjectDetails(null)}
-                className="size-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-all"
+                className="size-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-all shrink-0"
               >
                 <span className="material-symbols-outlined text-lg">close</span>
               </button>
             </div>
 
             {/* Tabs */}
-            <div className="flex bg-slate-100 dark:bg-slate-850 p-1 rounded-xl my-4 gap-1">
+            <div className="flex bg-slate-100 dark:bg-slate-850 p-1 rounded-xl my-4 gap-1 overflow-x-auto custom-scrollbar shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveDetailsTab('teachers')}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 min-w-[120px] py-2 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 truncate ${
                   activeDetailsTab === 'teachers' ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
                 }`}
               >
                 <span className="material-symbols-outlined text-base">groups</span>
-                Docentes Habilitados ({subjectTeachers.length})
+                Docentes ({subjectTeachers.length})
               </button>
               <button
                 type="button"
                 onClick={() => setActiveDetailsTab('rooms')}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 min-w-[120px] py-2 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 truncate ${
                   activeDetailsTab === 'rooms' ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
                 }`}
               >
                 <span className="material-symbols-outlined text-base">meeting_room</span>
-                Salas Compatibles ({subjectRooms.length})
+                Salas ({subjectRooms.length})
               </button>
               <button
                 type="button"
                 onClick={() => setActiveDetailsTab('prereqs')}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 min-w-[120px] py-2 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 truncate ${
                   activeDetailsTab === 'prereqs' ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
                 }`}
               >
@@ -510,7 +516,7 @@ const AsignaturasPage: React.FC = () => {
                 <div className="animate-spin size-6 border-2 border-primary border-t-transparent rounded-full"></div>
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto custom-scrollbar">
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
                 {/* TAB 1: TEACHERS */}
                 {activeDetailsTab === 'teachers' && (
                   <div>
@@ -521,9 +527,9 @@ const AsignaturasPage: React.FC = () => {
                       <select
                         value={selectedTeacherToAdd}
                         onChange={e => setSelectedTeacherToAdd(e.target.value)}
-                        className="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white"
+                        className="w-full sm:flex-1 min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white truncate"
                       >
-                        <option value="">Selecciona un docente para habilitar...</option>
+                        <option value="">Selecciona un docente...</option>
                         {allTeachers
                           .filter(t => !subjectTeachers.some(st => st.teacher_id === t.id))
                           .map(t => (
@@ -535,16 +541,16 @@ const AsignaturasPage: React.FC = () => {
                       <select
                         value={selectedTeacherPriority}
                         onChange={e => setSelectedTeacherPriority(Number(e.target.value))}
-                        className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white"
+                        className="w-full sm:w-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white"
                       >
-                        <option value={1}>Titular / Prioridad Alta</option>
-                        <option value={2}>Suplente / Respaldo</option>
+                        <option value={1}>Titular</option>
+                        <option value={2}>Suplente</option>
                       </select>
                       <button
                         type="button"
                         onClick={handleAddSubjectTeacher}
                         disabled={!selectedTeacherToAdd}
-                        className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary-dark disabled:opacity-40"
+                        className="w-full sm:w-auto inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary-dark disabled:opacity-40 shrink-0"
                       >
                         Habilitar
                       </button>
@@ -557,12 +563,12 @@ const AsignaturasPage: React.FC = () => {
                         </div>
                       ) : (
                         subjectTeachers.map(st => (
-                          <div key={st.teacher_id} className="flex items-center justify-between p-3">
-                            <div>
-                              <p className="text-xs font-bold text-slate-900 dark:text-white">{st.teacher_name}</p>
-                              <p className="text-[10px] text-slate-400">{st.teacher_rut || 'Sin RUT'}</p>
+                          <div key={st.teacher_id} className="flex items-center justify-between p-3 gap-2">
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{st.teacher_name}</p>
+                              <p className="text-[10px] text-slate-400 truncate">{st.teacher_rut || 'Sin RUT'}</p>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 shrink-0">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                 st.priority === 1 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20' : 'bg-slate-100 text-slate-600'
                               }`}>
@@ -593,9 +599,9 @@ const AsignaturasPage: React.FC = () => {
                       <select
                         value={selectedRoomToAdd}
                         onChange={e => setSelectedRoomToAdd(e.target.value)}
-                        className="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white"
+                        className="w-full sm:flex-1 min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white truncate"
                       >
-                        <option value="">Selecciona una sala compatible...</option>
+                        <option value="">Selecciona una sala...</option>
                         {allRooms
                           .filter(r => !subjectRooms.some(sr => sr.room_id === r.id))
                           .map(r => (
@@ -607,17 +613,17 @@ const AsignaturasPage: React.FC = () => {
                       <select
                         value={selectedRoomReqLevel}
                         onChange={e => setSelectedRoomReqLevel(e.target.value as any)}
-                        className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white"
+                        className="w-full sm:w-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white"
                       >
-                        <option value="EXCLUSIVE">Exclusiva (Obligatoria)</option>
-                        <option value="PREFERRED">Preferente (Bonus +20)</option>
+                        <option value="EXCLUSIVE">Exclusiva</option>
+                        <option value="PREFERRED">Preferente</option>
                         <option value="ALLOWED">Permitida</option>
                       </select>
                       <button
                         type="button"
                         onClick={handleAddSubjectRoom}
                         disabled={!selectedRoomToAdd}
-                        className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary-dark disabled:opacity-40"
+                        className="w-full sm:w-auto inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary-dark disabled:opacity-40 shrink-0"
                       >
                         Vincular
                       </button>
@@ -626,16 +632,16 @@ const AsignaturasPage: React.FC = () => {
                     <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl">
                       {subjectRooms.length === 0 ? (
                         <div className="p-6 text-center text-xs text-slate-400">
-                          Sin salas restringidas. La asignatura puede usar cualquier sala compatible por tipo.
+                          Sin salas restringidas. La asignatura puede usar cualquier sala compatible.
                         </div>
                       ) : (
                         subjectRooms.map(sr => (
-                          <div key={sr.room_id} className="flex items-center justify-between p-3">
-                            <div>
-                              <p className="text-xs font-bold text-slate-900 dark:text-white">{sr.room_name}</p>
-                              <p className="text-[10px] text-slate-400">Tipo: {sr.room_type} · Capacidad: {sr.room_capacity}</p>
+                          <div key={sr.room_id} className="flex items-center justify-between p-3 gap-2">
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{sr.room_name}</p>
+                              <p className="text-[10px] text-slate-400 truncate">Tipo: {sr.room_type} · Capacidad: {sr.room_capacity}</p>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 shrink-0">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                 sr.requirement_level === 'EXCLUSIVE'
                                   ? 'bg-purple-100 text-purple-800 dark:bg-purple-500/20'
@@ -670,9 +676,9 @@ const AsignaturasPage: React.FC = () => {
                       <select
                         value={selectedPrereqToAdd}
                         onChange={e => setSelectedPrereqToAdd(e.target.value)}
-                        className="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white"
+                        className="w-full sm:flex-1 min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white truncate"
                       >
-                        <option value="">Selecciona asignatura previa...</option>
+                        <option value="">Selecciona ramo previo...</option>
                         {subjects
                           .filter(s => s.id !== selectedSubjectDetails.id && !subjectPrereqs.some(sp => sp.prerequisite_id === s.id))
                           .map(s => (
@@ -684,7 +690,7 @@ const AsignaturasPage: React.FC = () => {
                       <select
                         value={selectedPrereqType}
                         onChange={e => setSelectedPrereqType(e.target.value as any)}
-                        className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white"
+                        className="w-full sm:w-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white"
                       >
                         <option value="MANDATORY">Obligatorio</option>
                         <option value="COREQUISITE">Correquisito</option>
@@ -694,7 +700,7 @@ const AsignaturasPage: React.FC = () => {
                         type="button"
                         onClick={handleAddPrerequisite}
                         disabled={!selectedPrereqToAdd}
-                        className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary-dark disabled:opacity-40"
+                        className="w-full sm:w-auto inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary-dark disabled:opacity-40 shrink-0"
                       >
                         Agregar
                       </button>
@@ -707,12 +713,12 @@ const AsignaturasPage: React.FC = () => {
                         </div>
                       ) : (
                         subjectPrereqs.map(sp => (
-                          <div key={sp.prerequisite_id} className="flex items-center justify-between p-3">
-                            <div>
-                              <p className="text-xs font-bold text-slate-900 dark:text-white">{sp.prerequisite_name}</p>
-                              <p className="text-[10px] text-slate-400">Código: {sp.prerequisite_code} · Nivel {sp.prerequisite_level}</p>
+                          <div key={sp.prerequisite_id} className="flex items-center justify-between p-3 gap-2">
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{sp.prerequisite_name}</p>
+                              <p className="text-[10px] text-slate-400 truncate">Código: {sp.prerequisite_code} · Nivel {sp.prerequisite_level}</p>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 shrink-0">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                 sp.type === 'MANDATORY' ? 'bg-red-100 text-red-800 dark:bg-red-500/20' : 'bg-slate-100 text-slate-600'
                               }`}>
@@ -740,14 +746,15 @@ const AsignaturasPage: React.FC = () => {
 
       {/* Modal de Registro/Edición Básica de Asignatura */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 relative overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 my-auto overflow-hidden">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary">menu_book</span>
                 {editingSubject ? 'Editar Asignatura' : 'Registrar Nueva Asignatura'}
               </h3>
               <button 
+                type="button"
                 onClick={() => setIsModalOpen(false)}
                 className="size-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-all"
               >
@@ -756,8 +763,8 @@ const AsignaturasPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveSubject} className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-1">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                <div className="sm:col-span-1">
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                     Código
                   </label>
@@ -767,11 +774,11 @@ const AsignaturasPage: React.FC = () => {
                     placeholder="Ej: DMOR0030"
                     value={formData.code}
                     onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-900/30 px-3 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all font-mono uppercase"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-3 py-2.5 text-xs text-slate-900 dark:text-white font-mono uppercase focus:border-primary focus:outline-none"
                   />
                 </div>
 
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                     Nombre de Asignatura
                   </label>
@@ -781,12 +788,12 @@ const AsignaturasPage: React.FC = () => {
                     placeholder="Ej: Morfología Humana"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-medium focus:border-primary focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3.5">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                     Nivel / Semestre
@@ -798,13 +805,13 @@ const AsignaturasPage: React.FC = () => {
                     max={12}
                     value={formData.level}
                     onChange={(e) => setFormData({ ...formData, level: parseInt(e.target.value) || 1 })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-medium focus:border-primary focus:outline-none"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                    Créditos Académicos
+                    Créditos
                   </label>
                   <input
                     type="number"
@@ -813,22 +820,22 @@ const AsignaturasPage: React.FC = () => {
                     max={30}
                     value={formData.credits}
                     onChange={(e) => setFormData({ ...formData, credits: parseInt(e.target.value) || 0 })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-2.5 text-sm focus:border-primary focus:ring-primary focus:outline-none dark:text-white transition-all"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-medium focus:border-primary focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+              <div className="pt-4 flex items-center justify-end gap-2.5 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary-dark shadow-md shadow-primary/20 transition-all"
+                  className="px-5 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark shadow-md shadow-primary/20 transition-all"
                 >
                   {editingSubject ? 'Guardar Cambios' : 'Registrar Asignatura'}
                 </button>
