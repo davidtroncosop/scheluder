@@ -574,10 +574,10 @@ const SchedulerPage: React.FC = () => {
       onPeriodChange={setSelectedPeriod}
       showPeriodSelector={false}
     >
-      <div className="h-[calc(100vh-140px)] flex flex-col overflow-hidden -m-6">
+      <div className="h-[calc(100vh-115px)] min-h-0 flex flex-col overflow-hidden -m-3 sm:-m-6">
         {/* Notice alert */}
         {notice && (
-          <div className={`px-6 py-2.5 text-xs font-semibold flex items-center justify-between ${
+          <div className={`px-6 py-2 text-xs font-semibold flex items-center justify-between shrink-0 ${
             notice.type === 'success' ? 'bg-emerald-500 text-white' : notice.type === 'error' ? 'bg-rose-500 text-white' : 'bg-blue-500 text-white'
           }`}>
             <span>{notice.message}</span>
@@ -589,7 +589,7 @@ const SchedulerPage: React.FC = () => {
 
         {/* Error alert */}
         {error && (
-          <div className="px-6 py-2.5 text-xs font-semibold bg-rose-600 text-white flex items-center justify-between">
+          <div className="px-6 py-2 text-xs font-semibold bg-rose-600 text-white flex items-center justify-between shrink-0">
             <span>{error}</span>
             <button type="button" onClick={() => setError(null)} className="hover:opacity-80">
               <span className="material-symbols-outlined text-sm">close</span>
@@ -632,7 +632,7 @@ const SchedulerPage: React.FC = () => {
         />
 
         {/* Main Planning Area: Sidebar + Grid */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden">
           {/* Backlog Sidebar */}
           <SchedulerSidebar
             sections={sections}
@@ -649,7 +649,7 @@ const SchedulerPage: React.FC = () => {
           />
 
           {/* Interactive Timetable Grid */}
-          <div ref={gridContainerRef} className="flex-1 flex overflow-hidden">
+          <div ref={gridContainerRef} className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
             {loading ? (
               <div className="flex-1 flex items-center justify-center text-xs text-slate-500">
                 <span className="material-symbols-outlined animate-spin text-2xl mr-2">progress_activity</span>

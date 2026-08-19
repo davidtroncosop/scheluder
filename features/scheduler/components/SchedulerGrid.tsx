@@ -219,7 +219,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
     : [selectedDay];
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 flex flex-col gap-3">
+    <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto custom-scrollbar bg-slate-50 dark:bg-slate-950 p-3 sm:p-5 flex flex-col gap-3">
       {/* Top Scope & Density Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
         {/* Left: Week vs Day View Mode */}
