@@ -6,6 +6,11 @@ import { calculateSectionDifficulty } from '../../assisted-planner/workflow';
 interface SchedulerSidebarProps {
   sections: Section[];
   teachers: ImportedTeacher[];
+  availableRooms?: Array<{ id: string; name: string; type: string; capacity: number }>;
+  activeSectionId?: string | null;
+  onSelectSectionForScheduling?: (section: Section | null) => void;
+  onUpdateSectionTeacher?: (sectionId: string, teacherName: string, teacherId?: string) => void;
+  onUpdateSectionRoom?: (sectionId: string, roomId: string, roomName: string) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
   onDragStart: (e: React.DragEvent, section: Section) => void;
@@ -17,6 +22,11 @@ interface SchedulerSidebarProps {
 export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
   sections,
   teachers,
+  availableRooms = [],
+  activeSectionId = null,
+  onSelectSectionForScheduling,
+  onUpdateSectionTeacher,
+  onUpdateSectionRoom,
   collapsed,
   onToggleCollapse,
   onDragStart,
@@ -40,7 +50,7 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
 
   if (collapsed) {
     return (
-      <aside className="w-14 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center py-4 gap-4 z-20">
+      <aside className="w-14 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center py-4 gap-4 z-20 shrink-0">
         <button
           type="button"
           onClick={onToggleCollapse}
@@ -116,7 +126,7 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
   };
 
   return (
-    <aside className="w-80 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-full z-20 shadow-xs">
+    <aside className="w-84 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-full z-20 shadow-xs shrink-0">
       {/* Sidebar Header */}
       <div className="p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
@@ -222,7 +232,7 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
       </div>
 
       {/* List Container */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
         {activeTab === 'secciones' ? (
           filteredSections.length === 0 ? (
             <div className="text-center py-10 text-slate-400">
@@ -234,6 +244,16 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
               const assigned = Number(section.assigned_slots || 0);
               const required = Number(section.hours_per_week || 2);
               const isCompleted = assigned >= required;
+              const isActive = activeSectionId === section.id;
+
+              // Filter compatible rooms
+              const secType = (section.type || 'TEO').toUpperCase();
+              const compatibleRooms = availableRooms.filter(r => {
+                if (secType === 'LAB') return r.type === 'LAB' || r.type === 'SIM';
+                if (secType === 'SIM') return r.type === 'SIM' || r.type === 'LAB';
+                if (secType === 'TAL') return r.type === 'TAL';
+                return r.type === 'TEO' || r.type === 'AUD';
+              });
 
               return (
                 <div
@@ -241,15 +261,17 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                   draggable={!isCompleted}
                   onDragStart={(e) => onDragStart(e, section)}
                   onDragEnd={onDragEnd}
-                  onClick={() => onOpenSectionModal(section)}
-                  className={`p-3 rounded-xl border transition-all cursor-grab active:cursor-grabbing hover:shadow-md ${
-                    isCompleted
-                      ? 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800/60 opacity-60'
+                  className={`p-3 rounded-xl border transition-all cursor-grab active:cursor-grabbing hover:shadow-md flex flex-col gap-2.5 ${
+                    isActive
+                      ? 'bg-primary/5 dark:bg-primary/10 border-primary ring-2 ring-primary/40 shadow-md'
+                      : isCompleted
+                      ? 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800/60 opacity-75'
                       : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-primary/50'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-1 mb-1">
-                    <div className="flex items-center gap-1.5">
+                  {/* Top Header: NRC, Level, Type & Status */}
+                  <div className="flex items-start justify-between gap-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
                         NRC {section.nrc}
                       </span>
@@ -264,20 +286,100 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                         {section.type}
                       </span>
                     </div>
-                    {getDifficultyBadge(section)}
+
+                    <div className="flex items-center gap-1">
+                      {getDifficultyBadge(section)}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenSectionModal(section);
+                        }}
+                        className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+                        title="Configuración avanzada de la sección"
+                      >
+                        <span className="material-symbols-outlined text-xs">settings</span>
+                      </button>
+                    </div>
                   </div>
 
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-100 line-clamp-1">
+                  {/* Subject Name */}
+                  <p className="text-xs font-bold text-slate-900 dark:text-white leading-tight">
                     {section.subject_name || section.subject_code}
                   </p>
 
-                  <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
-                    <span className="truncate max-w-[140px]">
-                      {section.teacher_name ? `👨‍🏫 ${section.teacher_name}` : '⚠️ Sin docente'}
-                    </span>
-                    <span className={`font-mono font-bold ${isCompleted ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  {/* Pre-configuration Selectors: Docente & Sala */}
+                  <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                    {/* Docente Selector */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700/70">
+                      <span className="material-symbols-outlined text-xs text-primary shrink-0">person</span>
+                      <select
+                        value={section.teacher_name || ''}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          const val = e.target.value;
+                          const selTeacher = teachers.find(t => t.nombre === val);
+                          onUpdateSectionTeacher?.(section.id, val, selTeacher?.id);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full text-[11px] font-medium bg-transparent border-0 p-0 text-slate-800 dark:text-slate-200 focus:ring-0 cursor-pointer truncate"
+                      >
+                        <option value="">-- Sin docente asignado --</option>
+                        {teachers.map(t => (
+                          <option key={t.id} value={t.nombre} className="text-slate-900 dark:text-slate-100">
+                            {t.nombre} ({t.tipo_contrato})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Sala Selector */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700/70">
+                      <span className="material-symbols-outlined text-xs text-amber-500 shrink-0">meeting_room</span>
+                      <select
+                        value={section.room_id || section.preferred_room_id || ''}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          const val = e.target.value;
+                          const selRoom = availableRooms.find(r => r.id === val);
+                          onUpdateSectionRoom?.(section.id, val, selRoom?.name || '');
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full text-[11px] font-medium bg-transparent border-0 p-0 text-slate-800 dark:text-slate-200 focus:ring-0 cursor-pointer truncate"
+                      >
+                        <option value="">-- Cualquier sala compatible ({secType}) --</option>
+                        {compatibleRooms.map(r => (
+                          <option key={r.id} value={r.id} className="text-slate-900 dark:text-slate-100">
+                            {r.name} ({r.type} · Cap. {r.capacity})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Hours & Schedule Trigger Button */}
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                    <span className={`text-[11px] font-mono font-bold ${isCompleted ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
                       {assigned}/{required} hrs {isCompleted ? '✓' : ''}
                     </span>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectSectionForScheduling?.(isActive ? null : section);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 shrink-0 ${
+                        isActive
+                          ? 'bg-primary text-white shadow-xs'
+                          : 'bg-primary/10 hover:bg-primary text-primary hover:text-white'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-xs">
+                        {isActive ? 'check_circle' : 'radar'}
+                      </span>
+                      <span>{isActive ? 'Planificando' : 'Ver en Matriz'}</span>
+                    </button>
                   </div>
                 </div>
               );

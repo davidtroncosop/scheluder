@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import type {
   SchedulerAssignment as Assignment,
   SchedulerConflict as Conflict,
@@ -17,6 +17,10 @@ interface SchedulerGridProps {
   selectedViewTeacher: string | null;
   parallelCount: number;
   draggingSection: Section | null;
+  activeSchedulingSection?: Section | null;
+  onSelectActiveSection?: (section: Section | null) => void;
+  onUpdateActiveTeacher?: (sectionId: string, teacherName: string, teacherId?: string) => void;
+  onUpdateActiveRoom?: (sectionId: string, roomId: string, roomName: string) => void;
   dropTarget: { timeslotId: string; dayOfWeek: number; parallelIndex: number } | null;
   availableRooms?: Array<{ id: string; name: string; type: string; capacity: number }>;
   teacherAvailabilities?: Array<{ teacher_id: string; day_of_week: number; timeslot_id: string; status: string; teacher_name?: string }>;
@@ -40,6 +44,10 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
   selectedViewRoom,
   selectedViewTeacher,
   draggingSection,
+  activeSchedulingSection = null,
+  onSelectActiveSection,
+  onUpdateActiveTeacher,
+  onUpdateActiveRoom,
   dropTarget,
   availableRooms = [],
   teacherAvailabilities = [],
@@ -58,6 +66,9 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
 
   const gridScrollRef = useRef<HTMLDivElement>(null);
   const tardeSlotRef = useRef<HTMLDivElement>(null);
+
+  // The section currently being planned (either dragged or active)
+  const targetSection = draggingSection || activeSchedulingSection;
 
   // Sorted timeslots (All blocks are always included)
   const sortedTimeslots = [...timeslots].sort((a, b) => Number(a.order_index || 0) - Number(b.order_index || 0));
@@ -113,26 +124,26 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
     return conflicts.find(c => c.assignment_id === assignmentId && !c.is_resolved);
   };
 
-  // Calculate compatibility & feasibility heatmap for a slot when dragging a section
+  // Calculate compatibility & feasibility heatmap for a slot when a section is targeted (dragged or active)
   const getSlotCompatibility = (dayOfWeek: number, timeslotId: string) => {
-    if (!draggingSection) return null;
+    if (!targetSection) return null;
 
     // 1. Check Teacher Conflict & Availability
     let teacherConflict: string | null = null;
     let isTeacherPreferred = false;
 
-    if (draggingSection.teacher_name) {
-      const teacherNorm = draggingSection.teacher_name.trim().toLowerCase();
+    if (targetSection.teacher_name) {
+      const teacherNorm = targetSection.teacher_name.trim().toLowerCase();
       // Is teacher already teaching another section at this slot?
       const teacherOccupied = assignments.find(
         a => a.day_of_week === dayOfWeek &&
              a.timeslot_id === timeslotId &&
              a.teacher_name?.trim().toLowerCase() === teacherNorm &&
-             a.section_id !== draggingSection.id
+             a.section_id !== targetSection.id
       );
 
       if (teacherOccupied) {
-        teacherConflict = `Profesor ocupado en ${teacherOccupied.subject_name || 'NRC ' + teacherOccupied.nrc}`;
+        teacherConflict = `Prof. ${targetSection.teacher_name} ocupado (${teacherOccupied.subject_name || 'NRC ' + teacherOccupied.nrc})`;
       } else {
         // Teacher preference/blocked
         const matchingAvail = teacherAvailabilities.find(
@@ -142,7 +153,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                 ta.timeslot_id === timeslotId
         );
         if (matchingAvail?.status === 'blocked') {
-          teacherConflict = 'Horario bloqueado por el docente';
+          teacherConflict = `Horario bloqueado por Prof. ${targetSection.teacher_name}`;
         } else if (matchingAvail?.status === 'preference') {
           isTeacherPreferred = true;
         }
@@ -153,12 +164,45 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
     const levelClash = assignments.find(
       a => a.day_of_week === dayOfWeek &&
            a.timeslot_id === timeslotId &&
-           Number(a.level) === Number(draggingSection.level) &&
-           a.section_id !== draggingSection.id
+           Number(a.level) === Number(targetSection.level) &&
+           a.section_id !== targetSection.id
     );
 
     // 3. Check Room Availability
-    const sectionType = (draggingSection.type || 'TEO').toUpperCase();
+    const sectionType = (targetSection.type || 'TEO').toUpperCase();
+    const targetedRoomId = targetSection.room_id || targetSection.preferred_room_id;
+    const targetedRoomName = targetSection.room_name;
+
+    const occupiedAssignments = assignments.filter(
+      a => a.day_of_week === dayOfWeek && a.timeslot_id === timeslotId && a.section_id !== targetSection.id
+    );
+    const occupiedRoomIdentifiers = occupiedAssignments.map(
+      a => (a.room_id || a.room_name || '').toUpperCase()
+    );
+
+    let specificRoomConflict: string | null = null;
+    let specificRoomFree = false;
+
+    if (targetedRoomId || targetedRoomName) {
+      const roomMatch = availableRooms.find(
+        r => (targetedRoomId && r.id === targetedRoomId) ||
+             (targetedRoomName && r.name.toUpperCase() === targetedRoomName.toUpperCase())
+      );
+      const rId = (roomMatch?.id || targetedRoomId || '').toUpperCase();
+      const rName = (roomMatch?.name || targetedRoomName || '').toUpperCase();
+
+      const isRoomOccupied = occupiedAssignments.find(
+        a => (a.room_id && a.room_id.toUpperCase() === rId) ||
+             (a.room_name && a.room_name.toUpperCase() === rName)
+      );
+
+      if (isRoomOccupied) {
+        specificRoomConflict = `Sala ${roomMatch?.name || targetedRoomName} ocupada por ${isRoomOccupied.subject_name || 'NRC ' + isRoomOccupied.nrc}`;
+      } else {
+        specificRoomFree = true;
+      }
+    }
+
     const compatRooms = availableRooms.filter(r => {
       if (sectionType === 'LAB') return r.type === 'LAB' || r.type === 'SIM';
       if (sectionType === 'SIM') return r.type === 'SIM' || r.type === 'LAB';
@@ -166,15 +210,13 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
       return r.type === 'TEO' || r.type === 'AUD';
     });
 
-    const occupiedRoomIds = assignments
-      .filter(a => a.day_of_week === dayOfWeek && a.timeslot_id === timeslotId)
-      .map(a => (a.room_id || a.room_name || '').toUpperCase());
-
-    const freeRooms = compatRooms.filter(
-      r => !occupiedRoomIds.includes(r.id.toUpperCase()) && !occupiedRoomIds.includes(r.name.toUpperCase())
+    const freeCompatRooms = compatRooms.filter(
+      r => !occupiedRoomIdentifiers.includes(r.id.toUpperCase()) && !occupiedRoomIdentifiers.includes(r.name.toUpperCase())
     );
 
-    // Decision Logic
+    // === Decision Logic ===
+
+    // Critical: Teacher conflict
     if (teacherConflict) {
       return {
         type: 'CRITICAL' as const,
@@ -185,40 +227,64 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
       };
     }
 
+    // Critical: Level Clash
     if (levelClash) {
       return {
         type: 'CRITICAL' as const,
-        label: `Tope Nivel ${draggingSection.level}: ${levelClash.subject_name || 'NRC ' + levelClash.nrc}`,
+        label: `Tope Nivel ${targetSection.level}: ${levelClash.subject_name || 'NRC ' + levelClash.nrc}`,
         tag: 'Choque de Nivel',
         bg: 'bg-rose-500/15 border-rose-400 text-rose-800 dark:text-rose-300 dark:bg-rose-950/40',
         dot: 'bg-rose-500',
       };
     }
 
-    if (compatRooms.length > 0 && freeRooms.length === 0) {
+    // Critical: Chosen specific room is occupied
+    if (specificRoomConflict) {
+      return {
+        type: 'CRITICAL' as const,
+        label: specificRoomConflict,
+        tag: 'Sala Ocupada',
+        bg: 'bg-rose-500/15 border-rose-400 text-rose-800 dark:text-rose-300 dark:bg-rose-950/40',
+        dot: 'bg-rose-500',
+      };
+    }
+
+    // Warning: No specific room chosen and all compatible rooms are occupied
+    if (!targetedRoomId && !targetedRoomName && compatRooms.length > 0 && freeCompatRooms.length === 0) {
       return {
         type: 'WARNING' as const,
-        label: `Salas ${sectionType} ocupadas (${compatRooms.length}/${compatRooms.length})`,
+        label: `Todas las salas ${sectionType} ocupadas (${compatRooms.length}/${compatRooms.length})`,
         tag: 'Sin Sala',
         bg: 'bg-amber-500/15 border-amber-400 text-amber-800 dark:text-amber-300 dark:bg-amber-950/40',
         dot: 'bg-amber-500',
       };
     }
 
+    // Preferred: Teacher preference marked + Room available
     if (isTeacherPreferred) {
+      const roomLabel = specificRoomFree
+        ? `Sala ${targetSection.room_name || 'elegida'} libre`
+        : `${freeCompatRooms.length} salas libres`;
       return {
         type: 'PREFERRED' as const,
-        label: `🌟 Horario Preferido (${freeRooms.length} salas libres)`,
+        label: `🌟 Horario Preferido (${roomLabel})`,
         tag: 'Zona Ideal',
         bg: 'bg-emerald-500/20 border-emerald-500 text-emerald-900 dark:text-emerald-200 dark:bg-emerald-950/60 ring-2 ring-emerald-400/50',
         dot: 'bg-emerald-500',
       };
     }
 
+    // Free & Compatible
+    const roomSuccessLabel = specificRoomFree
+      ? `✓ Sala ${targetSection.room_name || 'seleccionada'} libre`
+      : freeCompatRooms.length > 0
+      ? `✓ ${freeCompatRooms.length} salas libres`
+      : '✓ Disponible';
+
     return {
       type: 'FREE' as const,
-      label: `✓ Sin Conflicto (${freeRooms.length > 0 ? `${freeRooms.length} salas` : 'disponible'})`,
-      tag: 'Compatible',
+      label: `${roomSuccessLabel} · Sin conflicto`,
+      tag: 'Disponible',
       bg: 'bg-emerald-500/10 border-emerald-300 text-emerald-800 dark:text-emerald-300 dark:bg-emerald-950/30',
       dot: 'bg-emerald-400',
     };
@@ -241,6 +307,15 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
   const activeDays = timeScope === 'week' 
     ? [1, 2, 3, 4, 5] 
     : [selectedDay];
+
+  // Compatible rooms for the active section
+  const targetSecType = (targetSection?.type || 'TEO').toUpperCase();
+  const compatibleRoomsForTarget = availableRooms.filter(r => {
+    if (targetSecType === 'LAB') return r.type === 'LAB' || r.type === 'SIM';
+    if (targetSecType === 'SIM') return r.type === 'SIM' || r.type === 'LAB';
+    if (targetSecType === 'TAL') return r.type === 'TAL';
+    return r.type === 'TEO' || r.type === 'AUD';
+  });
 
   return (
     <div
@@ -360,20 +435,82 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
         </div>
       </div>
 
-      {/* Visual Helper Banner when dragging */}
-      {draggingSection && (
-        <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-indigo-900 dark:text-indigo-200 animate-fade-in shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-indigo-500 text-base animate-pulse">radar</span>
-            <span>
-              <strong>Programando NRC {draggingSection.nrc} ({draggingSection.subject_name || draggingSection.subject_code}):</strong>
-              {' '}Arrastra sobre las zonas verdes para evitar choques de salas, docentes y niveles.
-            </span>
+      {/* Interactive Planning & Compatibility Radar Banner */}
+      {targetSection && (
+        <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white rounded-2xl p-3.5 sm:p-4 shadow-xl border border-indigo-500/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 animate-fade-in shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="size-9 rounded-xl bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-primary text-xl animate-pulse">radar</span>
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-primary text-white">
+                  NRC {targetSection.nrc}
+                </span>
+                <span className="font-bold text-sm truncate">
+                  {targetSection.subject_name || targetSection.subject_code}
+                </span>
+                <span className="text-xs text-indigo-300">
+                  (Nivel {targetSection.level} · {targetSection.type})
+                </span>
+              </div>
+              <p className="text-xs text-indigo-200 mt-0.5">
+                💡 <strong>Haz clic en cualquier bloque verde</strong> de la matriz para asignar o cambia de sala/docente abajo:
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-3 font-semibold text-[11px]">
-            <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-emerald-500 inline-block" /> Zona Ideal (Sin conflictos)</span>
-            <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-amber-500 inline-block" /> Advertencia (Salas ocupadas)</span>
-            <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-rose-500 inline-block" /> Conflicto (Docente / Tope nivel)</span>
+
+          {/* Quick Pre-selectors in Header */}
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0 w-full md:w-auto">
+            {/* Quick Teacher Select */}
+            <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/15 text-xs">
+              <span className="material-symbols-outlined text-sm text-indigo-300">person</span>
+              <select
+                value={targetSection.teacher_name || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const selT = teachers.find(t => t.nombre === val);
+                  onUpdateActiveTeacher?.(targetSection.id, val, selT?.id);
+                }}
+                className="bg-transparent border-0 p-0 text-white text-xs font-semibold focus:ring-0 cursor-pointer max-w-[150px] truncate"
+              >
+                <option value="" className="text-slate-900">-- Docente --</option>
+                {teachers.map(t => (
+                  <option key={t.id} value={t.nombre} className="text-slate-900">{t.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Quick Room Select */}
+            <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/15 text-xs">
+              <span className="material-symbols-outlined text-sm text-amber-400">meeting_room</span>
+              <select
+                value={targetSection.room_id || targetSection.preferred_room_id || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const selR = availableRooms.find(r => r.id === val);
+                  onUpdateActiveRoom?.(targetSection.id, val, selR?.name || '');
+                }}
+                className="bg-transparent border-0 p-0 text-white text-xs font-semibold focus:ring-0 cursor-pointer max-w-[150px] truncate"
+              >
+                <option value="" className="text-slate-900">-- Sala ({targetSecType}) --</option>
+                {compatibleRoomsForTarget.map(r => (
+                  <option key={r.id} value={r.id} className="text-slate-900">{r.name} ({r.type})</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Deactivate Button */}
+            {activeSchedulingSection && (
+              <button
+                type="button"
+                onClick={() => onSelectActiveSection?.(null)}
+                className="p-1.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors"
+                title="Desactivar modo planificación"
+              >
+                <span className="material-symbols-outlined text-base">close</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -442,7 +579,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                       onDragLeave={onDragLeave}
                       onDrop={(e) => onDrop(e, slot.id, dayOfWeek, 0)}
                       onClick={() => onSlotClick?.(slot.id, dayOfWeek, 0)}
-                      className={`p-2 border-r border-slate-200 dark:border-slate-800 last:border-r-0 transition-all flex flex-col gap-1.5 relative ${timeScope === 'day' ? 'col-span-3' : ''} ${
+                      className={`p-2 border-r border-slate-200 dark:border-slate-800 last:border-r-0 transition-all flex flex-col gap-1.5 relative cursor-pointer ${timeScope === 'day' ? 'col-span-3' : ''} ${
                         isTarget
                           ? 'bg-primary/15 ring-2 ring-primary ring-inset z-10'
                           : compatibility
@@ -450,7 +587,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                           : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
                       }`}
                     >
-                      {/* Compatibility Feasibility Indicator when Dragging */}
+                      {/* Compatibility Feasibility Indicator when Planning/Dragging */}
                       {compatibility && (
                         <div className="text-[10px] font-bold py-0.5 px-2 rounded flex items-center justify-between gap-1 border border-current/20 mb-0.5 shrink-0 backdrop-blur-xs">
                           <span className="truncate">{compatibility.label}</span>
@@ -458,10 +595,16 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                         </div>
                       )}
 
-                      {/* Drag and Drop Prompt */}
-                      {cellAssignments.length === 0 && draggingSection && isTarget && (
-                        <div className="h-full w-full border-2 border-dashed border-primary rounded-lg flex items-center justify-center text-xs font-bold text-primary bg-primary/10">
-                          Soltar aquí para asignar
+                      {/* Drag and Drop / Click Prompt */}
+                      {cellAssignments.length === 0 && targetSection && (
+                        <div className={`h-full w-full rounded-lg flex items-center justify-center text-xs font-bold transition-all ${
+                          isTarget
+                            ? 'border-2 border-dashed border-primary text-primary bg-primary/10'
+                            : compatibility?.type === 'FREE' || compatibility?.type === 'PREFERRED'
+                            ? 'border border-dashed border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-500/5 hover:bg-emerald-500/15'
+                            : 'opacity-0'
+                        }`}>
+                          {isTarget ? 'Soltar aquí' : 'Clic para asignar'}
                         </div>
                       )}
 
@@ -473,6 +616,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                           return (
                             <div
                               key={assignment.id}
+                              onClick={(e) => e.stopPropagation()}
                               className={`group relative p-2.5 rounded-xl border transition-all shadow-xs hover:shadow-md ${
                                 conflict
                                   ? conflict.type === 'CRITICAL'

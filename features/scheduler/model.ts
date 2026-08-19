@@ -10,7 +10,11 @@ export interface SchedulerSection {
   parent_nrc: string | null;
   parent_subject_name?: string | null;
   hours_per_week: number;
+  teacher_id?: string | null;
   teacher_name: string | null;
+  room_id?: string | null;
+  room_name?: string | null;
+  preferred_room_id?: string | null;
   priority: number;
   assigned_slots: number;
 }
