@@ -307,6 +307,28 @@ const SchedulerPage: React.FC = () => {
     return availableRooms.filter(r => r.type === 'TEO' || r.type === 'AUD');
   };
 
+  const findFreeCompatibleRoom = (sectionType?: string, dayOfWeek?: number, timeslotId?: string) => {
+    const secType = (sectionType || 'TEO').toUpperCase();
+    const compatRooms = availableRooms.filter(r => {
+      if (secType === 'LAB') return r.type === 'LAB' || r.type === 'SIM';
+      if (secType === 'SIM') return r.type === 'SIM' || r.type === 'LAB';
+      if (secType === 'TAL') return r.type === 'TAL';
+      return r.type === 'TEO' || r.type === 'AUD';
+    });
+
+    if (!dayOfWeek || !timeslotId) return compatRooms[0] || availableRooms[0];
+
+    const occupiedRoomIds = assignments
+      .filter(a => a.day_of_week === dayOfWeek && a.timeslot_id === timeslotId)
+      .map(a => (a.room_id || a.room_name || '').toUpperCase());
+
+    const freeRooms = compatRooms.filter(
+      r => !occupiedRoomIds.includes(r.id.toUpperCase()) && !occupiedRoomIds.includes(r.name.toUpperCase())
+    );
+
+    return freeRooms[0] || compatRooms[0] || availableRooms[0];
+  };
+
   // Handler for updating teacher of a section
   const handleUpdateSectionTeacher = async (sectionId: string, teacherName: string, teacherId?: string) => {
     setSections(prev => prev.map(s => s.id === sectionId ? { ...s, teacher_name: teacherName, teacher_id: teacherId || null } : s));
@@ -330,70 +352,83 @@ const SchedulerPage: React.FC = () => {
     }
   };
 
+  // Direct unified execution helper
+  const executeAssignment = async (section: Section, roomId: string, timeslotId: string, dayOfWeek: number) => {
+    if (!selectedPeriod) return;
+    try {
+      setSaving(true);
+      setError(null);
+      if (dataStore.getAuthToken()) {
+        const res = await api.assignSection({
+          section_id: section.id,
+          room_id: roomId,
+          timeslot_id: timeslotId,
+          day_of_week: dayOfWeek,
+          period_id: selectedPeriod,
+        });
+
+        const roomObj = availableRooms.find(r => r.id === roomId);
+        if (res.warnings && res.warnings.length > 0) {
+          setNotice({ type: 'info', message: `Asignado en ${roomObj?.name || 'sala'}: ${res.warnings[0].description}` });
+        } else {
+          setNotice({ type: 'success', message: `NRC ${section.nrc} asignado exitosamente en ${roomObj?.name || 'sala'}` });
+        }
+        await loadScheduleData();
+      } else {
+        const roomObj = availableRooms.find(r => r.id === roomId);
+        const newAsg: Assignment = {
+          id: `asg-${Date.now()}`,
+          section_id: section.id,
+          room_id: roomId,
+          timeslot_id: timeslotId,
+          day_of_week: dayOfWeek,
+          period_id: selectedPeriod,
+          parallel_index: 0,
+          nrc: section.nrc,
+          subject_code: section.subject_code,
+          subject_name: section.subject_name,
+          level: section.level,
+          section_type: section.type,
+          teacher_name: section.teacher_name,
+          room_name: roomObj?.name || null,
+          room_type: roomObj?.type || 'TEO',
+          timeslot_label: timeslots.find(t => t.id === timeslotId)?.label || '',
+        };
+        setAssignments(prev => [...prev, newAsg]);
+        setHasChanges(true);
+      }
+      addAuditEntry('assign', `Asignado NRC ${section.nrc} a día ${dayOfWeek}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al asignar la sección');
+    } finally {
+      setSaving(false);
+      setRoomSelectorData(null);
+    }
+  };
+
   // Direct slot click handler (Click-to-Assign)
   const handleSlotClick = async (timeslotId: string, dayOfWeek: number, parallelIndex: number) => {
     if (!activeSchedulingSection) return;
 
     const chosenRoomId = activeSchedulingSection.room_id || activeSchedulingSection.preferred_room_id;
     if (chosenRoomId) {
-      try {
-        setSaving(true);
-        setError(null);
-        if (dataStore.getAuthToken()) {
-          const res = await api.assignSection({
-            section_id: activeSchedulingSection.id,
-            room_id: chosenRoomId,
-            timeslot_id: timeslotId,
-            day_of_week: dayOfWeek,
-            period_id: selectedPeriod,
-          });
-
-          if (res.warnings && res.warnings.length > 0) {
-            setNotice({ type: 'info', message: `Asignado con advertencia: ${res.warnings[0].description}` });
-          } else {
-            setNotice({ type: 'success', message: `NRC ${activeSchedulingSection.nrc} asignado exitosamente en Sala ${activeSchedulingSection.room_name || ''}` });
-          }
-          await loadScheduleData();
-        } else {
-          const room = availableRooms.find(r => r.id === chosenRoomId);
-          const newAsg: Assignment = {
-            id: `asg-${Date.now()}`,
-            section_id: activeSchedulingSection.id,
-            room_id: chosenRoomId,
-            timeslot_id: timeslotId,
-            day_of_week: dayOfWeek,
-            period_id: selectedPeriod,
-            parallel_index: 0,
-            nrc: activeSchedulingSection.nrc,
-            subject_code: activeSchedulingSection.subject_code,
-            subject_name: activeSchedulingSection.subject_name,
-            level: activeSchedulingSection.level,
-            section_type: activeSchedulingSection.type,
-            teacher_name: activeSchedulingSection.teacher_name,
-            room_name: room?.name || null,
-            room_type: room?.type || 'TEO',
-            timeslot_label: timeslots.find(t => t.id === timeslotId)?.label || '',
-          };
-          setAssignments(prev => [...prev, newAsg]);
-          setHasChanges(true);
-        }
-        addAuditEntry('assign', `Asignado NRC ${activeSchedulingSection.nrc} a día ${dayOfWeek}`);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al asignar la sección');
-      } finally {
-        setSaving(false);
-      }
+      await executeAssignment(activeSchedulingSection, chosenRoomId, timeslotId, dayOfWeek);
     } else {
-      setRoomSelectorData({
-        section: activeSchedulingSection,
-        timeslotId,
-        dayOfWeek,
-        parallelIndex,
-      });
+      const freeRoom = findFreeCompatibleRoom(activeSchedulingSection.type, dayOfWeek, timeslotId);
+      if (freeRoom) {
+        await executeAssignment(activeSchedulingSection, freeRoom.id, timeslotId, dayOfWeek);
+      } else {
+        setRoomSelectorData({
+          section: activeSchedulingSection,
+          timeslotId,
+          dayOfWeek,
+          parallelIndex,
+        });
+      }
     }
   };
 
-  const handleDrop = (e: React.DragEvent, timeslotId: string, dayOfWeek: number, parallelIndex: number) => {
+  const handleDrop = async (e: React.DragEvent, timeslotId: string, dayOfWeek: number, parallelIndex: number) => {
     e.preventDefault();
     setDropTarget(null);
 
@@ -411,75 +446,26 @@ const SchedulerPage: React.FC = () => {
 
     const chosenRoomId = sectionToAssign.room_id || sectionToAssign.preferred_room_id;
     if (chosenRoomId) {
-      setRoomSelectorData({
-        section: sectionToAssign,
-        timeslotId,
-        dayOfWeek,
-        parallelIndex,
-      });
-      handleConfirmRoomAssignment(chosenRoomId);
+      await executeAssignment(sectionToAssign, chosenRoomId, timeslotId, dayOfWeek);
     } else {
-      setRoomSelectorData({
-        section: sectionToAssign,
-        timeslotId,
-        dayOfWeek,
-        parallelIndex,
-      });
+      const freeRoom = findFreeCompatibleRoom(sectionToAssign.type, dayOfWeek, timeslotId);
+      if (freeRoom) {
+        await executeAssignment(sectionToAssign, freeRoom.id, timeslotId, dayOfWeek);
+      } else {
+        setRoomSelectorData({
+          section: sectionToAssign,
+          timeslotId,
+          dayOfWeek,
+          parallelIndex,
+        });
+      }
     }
   };
 
   const handleConfirmRoomAssignment = async (roomId: string) => {
     if (!roomSelectorData || !selectedPeriod) return;
     const { section, timeslotId, dayOfWeek } = roomSelectorData;
-
-    try {
-      setSaving(true);
-      setError(null);
-      if (dataStore.getAuthToken()) {
-        const res = await api.assignSection({
-          section_id: section.id,
-          room_id: roomId,
-          timeslot_id: timeslotId,
-          day_of_week: dayOfWeek,
-          period_id: selectedPeriod,
-        });
-
-        if (res.warnings && res.warnings.length > 0) {
-          setNotice({ type: 'info', message: `Asignado con advertencias: ${res.warnings[0].description}` });
-        } else {
-          setNotice({ type: 'success', message: `NRC ${section.nrc} asignado exitosamente` });
-        }
-        await loadScheduleData();
-      } else {
-        const room = availableRooms.find(r => r.id === roomId);
-        const newAsg: Assignment = {
-          id: `asg-${Date.now()}`,
-          section_id: section.id,
-          room_id: roomId,
-          timeslot_id: timeslotId,
-          day_of_week: dayOfWeek,
-          period_id: selectedPeriod,
-          parallel_index: 0,
-          nrc: section.nrc,
-          subject_code: section.subject_code,
-          subject_name: section.subject_name,
-          level: section.level,
-          section_type: section.type,
-          teacher_name: section.teacher_name,
-          room_name: room?.name || null,
-          room_type: room?.type || 'TEO',
-          timeslot_label: timeslots.find(t => t.id === timeslotId)?.label || '',
-        };
-        setAssignments(prev => [...prev, newAsg]);
-        setHasChanges(true);
-      }
-      addAuditEntry('assign', `Asignado NRC ${section.nrc} a día ${dayOfWeek}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al asignar la sección');
-    } finally {
-      setSaving(false);
-      setRoomSelectorData(null);
-    }
+    await executeAssignment(section, roomId, timeslotId, dayOfWeek);
   };
 
   // Auto assign solver handler
