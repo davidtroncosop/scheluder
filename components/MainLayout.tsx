@@ -10,6 +10,8 @@ interface MainLayoutProps {
     selectedPeriod?: string;
     onPeriodChange?: (period: string) => void;
     showPeriodSelector?: boolean;
+    noPadding?: boolean;
+    fullWidth?: boolean;
 }
 
 export const MainLayout: React.FC<MainLayoutProps> = ({
@@ -18,7 +20,9 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
     actions,
     selectedPeriod = '',
     onPeriodChange = () => { },
-    showPeriodSelector = true
+    showPeriodSelector = true,
+    noPadding = false,
+    fullWidth = false,
 }) => {
     const location = useLocation();
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -282,11 +286,17 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                 </header>
 
                 {/* Content Area */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-3 sm:p-6 relative z-0">
-                    <div className="max-w-7xl mx-auto w-full">
+                {noPadding ? (
+                    <div className="flex-1 min-h-0 flex flex-col relative z-0 overflow-hidden">
                         {children}
                     </div>
-                </div>
+                ) : (
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-3 sm:p-6 relative z-0">
+                        <div className={`${fullWidth ? 'w-full' : 'max-w-7xl mx-auto w-full'}`}>
+                            {children}
+                        </div>
+                    </div>
+                )}
             </main>
         </div>
     );

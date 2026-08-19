@@ -573,8 +573,9 @@ const SchedulerPage: React.FC = () => {
       selectedPeriod={selectedPeriod}
       onPeriodChange={setSelectedPeriod}
       showPeriodSelector={false}
+      noPadding={true}
     >
-      <div className="h-[calc(100vh-115px)] min-h-0 flex flex-col overflow-hidden -m-3 sm:-m-6">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {/* Notice alert */}
         {notice && (
           <div className={`px-6 py-2 text-xs font-semibold flex items-center justify-between shrink-0 ${
