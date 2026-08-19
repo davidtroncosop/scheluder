@@ -574,6 +574,7 @@ const SchedulerPage: React.FC = () => {
       onPeriodChange={setSelectedPeriod}
       showPeriodSelector={false}
       noPadding={true}
+      noHeader={true}
     >
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {/* Notice alert */}

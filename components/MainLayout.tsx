@@ -12,6 +12,7 @@ interface MainLayoutProps {
     showPeriodSelector?: boolean;
     noPadding?: boolean;
     fullWidth?: boolean;
+    noHeader?: boolean;
 }
 
 export const MainLayout: React.FC<MainLayoutProps> = ({
@@ -23,6 +24,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
     showPeriodSelector = true,
     noPadding = false,
     fullWidth = false,
+    noHeader = false,
 }) => {
     const location = useLocation();
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -248,42 +250,44 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
             {/* Main View Area */}
             <main className="flex-1 flex flex-col h-full min-w-0 relative overflow-hidden bg-slate-50 dark:bg-[#020617] transition-colors duration-500">
                 {/* Header */}
-                <header className="flex items-center justify-between px-4 sm:px-8 py-3.5 sm:py-5 glass-effect border-b border-slate-200/50 dark:border-white/5 z-10 shrink-0 sticky top-0">
-                    <div className="flex items-center gap-3 sm:gap-5 min-w-0">
-                        {/* Mobile Hamburger Button */}
-                        <button
-                            type="button"
-                            onClick={() => setMobileMenuOpen(true)}
-                            className="md:hidden size-9 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0 shadow-xs"
-                            aria-label="Abrir menú"
-                        >
-                            <span className="material-symbols-outlined text-xl">menu</span>
-                        </button>
+                {!noHeader && (
+                    <header className="flex items-center justify-between px-4 sm:px-8 py-3.5 sm:py-5 glass-effect border-b border-slate-200/50 dark:border-white/5 z-10 shrink-0 sticky top-0">
+                        <div className="flex items-center gap-3 sm:gap-5 min-w-0">
+                            {/* Mobile Hamburger Button */}
+                            <button
+                                type="button"
+                                onClick={() => setMobileMenuOpen(true)}
+                                className="md:hidden size-9 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0 shadow-xs"
+                                aria-label="Abrir menú"
+                            >
+                                <span className="material-symbols-outlined text-xl">menu</span>
+                            </button>
 
-                        <h1 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight truncate">{title}</h1>
-                        {showPeriodSelector && (
-                            <div className="h-6 w-px bg-slate-200 dark:bg-slate-700/50 hidden md:block"></div>
-                        )}
-                        {showPeriodSelector && (
-                            <div className="hidden sm:block">
-                                <PeriodSelector selectedPeriod={selectedPeriod} onPeriodChange={onPeriodChange} />
-                            </div>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-                        {actions}
+                            <h1 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight truncate">{title}</h1>
+                            {showPeriodSelector && (
+                                <div className="h-6 w-px bg-slate-200 dark:bg-slate-700/50 hidden md:block"></div>
+                            )}
+                            {showPeriodSelector && (
+                                <div className="hidden sm:block">
+                                    <PeriodSelector selectedPeriod={selectedPeriod} onPeriodChange={onPeriodChange} />
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                            {actions}
 
-                        {/* Avatar/Profile */}
-                        <div 
-                            className={`size-9 sm:size-10 rounded-full bg-gradient-to-tr ${getAvatarGradient()} shadow-sm flex items-center justify-center p-[2px] cursor-pointer hover:shadow-md transition-shadow shrink-0`}
-                            title={userInfo ? `${userInfo.name} (${userInfo.role === 'admin' ? 'Administrador' : 'Coordinador'})` : 'Usuario'}
-                        >
-                            <div className="w-full h-full bg-white dark:bg-slate-900 rounded-full flex items-center justify-center">
-                                <span className="text-xs sm:text-sm font-bold text-primary">{getInitials()}</span>
+                            {/* Avatar/Profile */}
+                            <div 
+                                className={`size-9 sm:size-10 rounded-full bg-gradient-to-tr ${getAvatarGradient()} shadow-sm flex items-center justify-center p-[2px] cursor-pointer hover:shadow-md transition-shadow shrink-0`}
+                                title={userInfo ? `${userInfo.name} (${userInfo.role === 'admin' ? 'Administrador' : 'Coordinador'})` : 'Usuario'}
+                            >
+                                <div className="w-full h-full bg-white dark:bg-slate-900 rounded-full flex items-center justify-center">
+                                    <span className="text-xs sm:text-sm font-bold text-primary">{getInitials()}</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </header>
+                    </header>
+                )}
 
                 {/* Content Area */}
                 {noPadding ? (
