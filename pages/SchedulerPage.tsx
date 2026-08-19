@@ -156,102 +156,94 @@ const SchedulerPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const token = dataStore.getAuthToken();
-      if (token) {
-        const [periodRes, sectionsRes, timeslotsRes, conflictsRes, statusRes, auditRes] = await Promise.all([
-          fetch(`/api/schedule?period_id=${selectedPeriod}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`/api/sections?period_id=${selectedPeriod}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch('/api/timeslots', { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch('/api/conflicts?resolved=false', { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`/api/schedule/status?period_id=${encodeURIComponent(selectedPeriod)}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`/api/audit?period_id=${encodeURIComponent(selectedPeriod)}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        ]);
+      // 1. Fetch remote data with api client
+      const [remoteSchedule, remoteSections, remoteTimeslots, remoteConflicts, remoteStatus, remoteRooms, remoteTeachers] = await Promise.all([
+        api.getSchedule(selectedPeriod).catch(() => []),
+        api.getSectionsForContext(selectedPeriod).catch(() => []),
+        api.getTimeslots().catch(() => []),
+        api.getConflicts(false).catch(() => []),
+        api.getScheduleStatus(selectedPeriod).catch(() => ({ status: 'draft' as const })),
+        api.getRooms().catch(() => []),
+        api.getTeachers().catch(() => []),
+      ]);
 
-        if (timeslotsRes.ok) {
-          const rawTimeslots = await timeslotsRes.json() as Array<Record<string, any>>;
-          setTimeslots(rawTimeslots.map(slot => ({
-            id: slot.id,
-            label: slot.label,
-            start_time: slot.start_time,
-            end_time: slot.end_time,
-            order_index: Number(slot.order_index || 0),
-          })));
-        } else {
-          setTimeslots(dataStore.getCustomTimeslots());
+      // Set Rooms
+      if (remoteRooms.length > 0) {
+        setAvailableRooms(remoteRooms.map(r => ({
+          id: r.id,
+          name: r.name,
+          type: r.type,
+          capacity: r.capacity,
+        })));
+        if (!selectedViewRoom && remoteRooms[0]) {
+          setSelectedViewRoom(remoteRooms[0].name);
         }
+      }
 
-        if (periodRes.ok && sectionsRes.ok) {
-          const rawAsgs = await periodRes.json() as any[];
-          const rawSecs = await sectionsRes.json() as any[];
-
-          const mappedAsgs = mapBackendAssignments(rawAsgs);
-          setAssignments(mappedAsgs);
-
-          const mappedSecs: Section[] = rawSecs.map((s: any) => ({
-            id: s.id,
-            subject_id: s.subject_id,
-            nrc: s.nrc,
-            subject_name: s.subject_name || s.nombre,
-            subject_code: s.subject_code || s.codigo,
-            level: Number(s.level || 1),
-            type: s.type || 'TEO',
-            parent_section_id: s.parent_section_id || null,
-            parent_nrc: s.parent_nrc || null,
-            parent_subject_name: s.parent_subject_name || null,
-            hours_per_week: Number(s.hours_per_week || 2),
-            assigned_slots: Number(s.assigned_slots || 0),
-            priority: Number(s.priority || 0),
-            teacher_name: s.teacher_name || s.profesor || null,
-          }));
-          setSections(mappedSecs);
-
-          let loadedConflicts: Conflict[] = [];
-          if (conflictsRes.ok) {
-            const rawConflicts = await conflictsRes.json() as any[];
-            loadedConflicts = rawConflicts.map(c => ({
-              id: c.id,
-              assignment_id: c.assignment_id,
-              type: c.type,
-              rule_code: c.rule_code,
-              description: c.description || '',
-              subject_name: c.subject_name || '',
-              nrc: c.nrc || '',
-              teacher_name: c.teacher_name || null,
-              timeslot_label: c.timeslot_label || '',
-              day_of_week: Number(c.day_of_week || 1),
-              parallel_index: Number(c.parallel_index || 0),
-              is_resolved: c.is_resolved,
-            }));
-            setConflicts(loadedConflicts);
-          }
-
-          if (statusRes.ok) {
-            const statusData = await statusRes.json() as { status: 'draft' | 'review' | 'published' };
-            setScheduleStatus(statusData.status);
-          }
-
-          if (auditRes.ok) {
-            const auditData = await auditRes.json() as any[];
-            if (Array.isArray(auditData) && auditData.length > 0) {
-              setAuditLog(auditData.map(a => ({
-                id: a.id,
-                timestamp: new Date(a.created_at),
-                action: a.action,
-                description: `${a.action} ${a.entity_type} ${a.entity_id || ''}`,
-                user: a.user_name || 'Usuario',
-              })));
-            }
-          }
-
-          setMetrics(calculateHealth(mappedSecs, mappedAsgs, loadedConflicts));
-        }
-      } else if (OFFLINE_DEMO_ENABLED) {
+      // Set Timeslots
+      if (remoteTimeslots.length > 0) {
+        setTimeslots(remoteTimeslots.map(slot => ({
+          id: slot.id,
+          label: slot.label,
+          start_time: slot.start_time,
+          end_time: slot.end_time,
+          order_index: Number(slot.order_index || 0),
+        })));
+      } else {
         setTimeslots(dataStore.getCustomTimeslots());
+      }
+
+      // Set Status
+      setScheduleStatus(remoteStatus.status);
+
+      // Set Assignments
+      const mappedAsgs = mapBackendAssignments(remoteSchedule);
+      setAssignments(mappedAsgs);
+
+      // Set Conflicts
+      const loadedConflicts: Conflict[] = (remoteConflicts as any[]).map((c: any) => ({
+        id: c.id,
+        assignment_id: c.assignment_id,
+        type: c.type,
+        rule_code: c.rule_code,
+        description: c.description || '',
+        subject_name: c.subject_name || '',
+        nrc: c.nrc || '',
+        teacher_name: c.teacher_name || null,
+        timeslot_label: c.timeslot_label || '',
+        day_of_week: Number(c.day_of_week || 1),
+        parallel_index: Number(c.parallel_index || 0),
+        is_resolved: c.is_resolved,
+      }));
+      setConflicts(loadedConflicts);
+
+      // Set Sections
+      if (remoteSections && remoteSections.length > 0) {
+        const mappedSecs: Section[] = remoteSections.map((s: any) => ({
+          id: s.id,
+          subject_id: s.subject_id,
+          nrc: s.nrc,
+          subject_name: s.subject_name || s.nombre || s.codigo,
+          subject_code: s.subject_code || s.codigo,
+          level: Number(s.level || s.nivel || 1),
+          type: s.type || s.tipo || 'TEO',
+          parent_section_id: s.parent_section_id || null,
+          parent_nrc: s.parent_nrc || null,
+          parent_subject_name: s.parent_subject_name || null,
+          hours_per_week: Number(s.hours_per_week || s.horas || 2),
+          assigned_slots: Number(s.assigned_slots || 0),
+          priority: Number(s.priority || 0),
+          teacher_name: s.teacher_name || s.profesor || null,
+        }));
+        setSections(mappedSecs);
+        setMetrics(calculateHealth(mappedSecs, mappedAsgs, loadedConflicts));
+      } else {
+        // Fallback to local store or demo sections
         const localSecs = dataStore.getSections().map((s: any) => ({
           id: s.id,
           subject_id: s.subject_id || '',
           nrc: s.nrc || '',
-          subject_name: s.nombre || s.subject_name || '',
+          subject_name: s.nombre || s.subject_name || s.codigo || '',
           subject_code: s.codigo || s.subject_code || '',
           level: Number(s.nivel || s.level || 1),
           type: s.tipo || s.type || 'TEO',
@@ -263,7 +255,7 @@ const SchedulerPage: React.FC = () => {
           teacher_name: s.profesor || s.teacher_name || null,
         }));
         setSections(localSecs);
-        setMetrics(calculateHealth(localSecs, [], []));
+        setMetrics(calculateHealth(localSecs, mappedAsgs, loadedConflicts));
       }
     } catch (err) {
       console.error('Error loading schedule data:', err);
@@ -271,7 +263,7 @@ const SchedulerPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedPeriod]);
+  }, [selectedPeriod, selectedViewRoom]);
 
   useEffect(() => {
     loadScheduleData();
