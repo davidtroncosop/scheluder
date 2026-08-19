@@ -10,6 +10,7 @@ interface SchedulerHeaderProps {
   onChangeViewMode: (mode: 'nivel' | 'sala' | 'docente') => void;
   selectedViewLevel: number;
   onChangeViewLevel: (level: number) => void;
+  availableLevels?: number[];
   selectedViewRoom: string;
   onChangeViewRoom: (room: string) => void;
   availableRooms: Array<{ id: string; name: string }>;
@@ -35,6 +36,7 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
   onChangeViewMode,
   selectedViewLevel,
   onChangeViewLevel,
+  availableLevels = [1, 2, 3, 4, 5, 6, 7, 8],
   selectedViewRoom,
   onChangeViewRoom,
   availableRooms,
@@ -58,16 +60,18 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
 
   const status = statusLabels[scheduleStatus] || statusLabels.draft;
 
+  const displayLevels = availableLevels.length > 0 ? availableLevels : [1, 2, 3, 4, 5, 6];
+
   return (
-    <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 sticky top-0 z-30 shadow-xs">
-      <div className="flex flex-wrap items-center gap-3">
+    <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3.5 sm:py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 sticky top-0 z-30 shadow-xs">
+      <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
         {/* Period Selector */}
-        <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-slate-400 text-lg">calendar_today</span>
+        <div className="flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-slate-400 text-base">calendar_today</span>
           <select
             value={selectedPeriod}
             onChange={(e) => onSelectPeriod(e.target.value)}
-            className="text-sm font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-1.5 border-0 focus:ring-2 focus:ring-primary cursor-pointer"
+            className="text-xs sm:text-sm font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-2.5 py-1.5 border-0 focus:ring-2 focus:ring-primary cursor-pointer"
           >
             {periods.map(p => (
               <option key={p.id} value={p.id}>{p.name}</option>
@@ -76,21 +80,21 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
         </div>
 
         {/* Status Badge */}
-        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${status.color}`}>
+        <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${status.color}`}>
           <span className="material-symbols-outlined text-sm">{status.icon}</span>
           <span>{status.label}</span>
         </div>
 
-        <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:block" />
+        <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5 hidden sm:block" />
 
         {/* View Mode Switcher */}
         <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
           <button
             type="button"
             onClick={() => onChangeViewMode('nivel')}
-            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+            className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
               viewMode === 'nivel'
-                ? 'bg-white dark:bg-slate-700 text-primary shadow-xs font-bold'
+                ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
             }`}
           >
@@ -99,9 +103,9 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
           <button
             type="button"
             onClick={() => onChangeViewMode('sala')}
-            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+            className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
               viewMode === 'sala'
-                ? 'bg-white dark:bg-slate-700 text-primary shadow-xs font-bold'
+                ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
             }`}
           >
@@ -110,9 +114,9 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
           <button
             type="button"
             onClick={() => onChangeViewMode('docente')}
-            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+            className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
               viewMode === 'docente'
-                ? 'bg-white dark:bg-slate-700 text-primary shadow-xs font-bold'
+                ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
             }`}
           >
@@ -120,19 +124,20 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
           </button>
         </div>
 
-        {/* Secondary View Filter */}
+        {/* Secondary View Filter: Levels */}
         {viewMode === 'nivel' && (
-          <div className="flex items-center gap-1">
-            {[1, 2, 3, 4, 5].map(lvl => (
+          <div className="flex items-center gap-1 overflow-x-auto max-w-[280px] sm:max-w-none custom-scrollbar py-0.5">
+            {displayLevels.map(lvl => (
               <button
                 key={lvl}
                 type="button"
                 onClick={() => onChangeViewLevel(lvl)}
-                className={`size-7 rounded-md text-xs font-bold transition-all ${
+                className={`size-7 shrink-0 rounded-md text-xs font-black transition-all ${
                   selectedViewLevel === lvl
                     ? 'bg-primary text-white shadow-xs'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
                 }`}
+                title={`Ver asignaciones de Nivel ${lvl}`}
               >
                 {lvl}°
               </button>
@@ -144,7 +149,7 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
           <select
             value={selectedViewRoom}
             onChange={(e) => onChangeViewRoom(e.target.value)}
-            className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-md px-2 py-1.5 border-0 focus:ring-2 focus:ring-primary"
+            className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-md px-2 py-1.5 border-0 focus:ring-2 focus:ring-primary font-bold"
           >
             {availableRooms.map(r => (
               <option key={r.id} value={r.name}>{r.name}</option>
@@ -156,7 +161,7 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
           <select
             value={selectedViewTeacher || ''}
             onChange={(e) => onChangeViewTeacher(e.target.value)}
-            className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-md px-2 py-1.5 border-0 focus:ring-2 focus:ring-primary"
+            className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-md px-2 py-1.5 border-0 focus:ring-2 focus:ring-primary font-bold"
           >
             <option value="">Seleccionar docente...</option>
             {availableTeachers.map(t => (
@@ -167,11 +172,11 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
         <button
           type="button"
           onClick={onAutoAssign}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+          className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
           title="Generar propuesta automática con optimizador"
         >
           <span className="material-symbols-outlined text-sm">auto_awesome</span>
@@ -180,47 +185,45 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
 
         <button
           type="button"
-          onClick={onOpenExport}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+          onClick={onSaveDraft}
+          disabled={saving || !hasChanges}
+          className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+          title="Guardar estado actual del borrador"
         >
-          <span className="material-symbols-outlined text-sm">download</span>
-          <span>Exportar</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenAudit}
-          className="p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-          title="Historial de cambios"
-        >
-          <span className="material-symbols-outlined text-lg">history</span>
+          <span className="material-symbols-outlined text-sm">save</span>
+          <span>{saving ? 'Guardando...' : 'Guardar'}</span>
         </button>
 
         <button
           type="button"
           onClick={onPublish}
           disabled={!canPublish}
-          className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
-            canPublish
-              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-              : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-          }`}
+          className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-xs disabled:opacity-50 disabled:bg-slate-400"
+          title={canPublish ? 'Publicar horario oficial' : 'Resuelve los conflictos críticos antes de publicar'}
         >
           <span className="material-symbols-outlined text-sm">publish</span>
           <span>Publicar</span>
         </button>
 
-        {hasChanges && (
-          <button
-            type="button"
-            onClick={onSaveDraft}
-            disabled={saving}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-primary text-white rounded-lg hover:bg-primary/90 transition-all shadow-xs animate-pulse"
-          >
-            <span className="material-symbols-outlined text-sm">{saving ? 'sync' : 'save'}</span>
-            <span>{saving ? 'Guardando...' : 'Guardar'}</span>
-          </button>
-        )}
+        <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5 hidden sm:block" />
+
+        <button
+          type="button"
+          onClick={onOpenExport}
+          className="p-1.5 text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+          title="Exportar horario (PDF / Excel / iCal)"
+        >
+          <span className="material-symbols-outlined text-lg">download</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onOpenAudit}
+          className="p-1.5 text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+          title="Historial de cambios y auditoría"
+        >
+          <span className="material-symbols-outlined text-lg">history</span>
+        </button>
       </div>
     </header>
   );

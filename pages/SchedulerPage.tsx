@@ -141,6 +141,15 @@ const SchedulerPage: React.FC = () => {
     return [...new Set(list)];
   }, [teachers, assignments]);
 
+  const availableLevels = useMemo(() => {
+    const levels = new Set<number>();
+    sections.forEach(s => {
+      if (s.level) levels.add(Number(s.level));
+    });
+    if (levels.size === 0) return [1, 2, 3, 4, 5, 6, 7, 8];
+    return Array.from(levels).sort((a, b) => a - b);
+  }, [sections]);
+
   // Load schedule data
   const loadScheduleData = useCallback(async () => {
     if (!selectedPeriod) return;
@@ -599,6 +608,7 @@ const SchedulerPage: React.FC = () => {
           onChangeViewMode={setViewMode}
           selectedViewLevel={selectedViewLevel}
           onChangeViewLevel={setSelectedViewLevel}
+          availableLevels={availableLevels}
           selectedViewRoom={selectedViewRoom}
           onChangeViewRoom={setSelectedViewRoom}
           availableRooms={availableRooms}
