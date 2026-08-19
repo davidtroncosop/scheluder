@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type {
   SchedulerAssignment as Assignment,
   SchedulerConflict as Conflict,
@@ -51,6 +51,21 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
   onDeleteAssignment,
   onSlotClick,
 }) => {
+  const [jornadaFilter, setJornadaFilter] = useState<'todas' | 'manana' | 'tarde'>('todas');
+  const [density, setDensity] = useState<'normal' | 'compact'>('normal');
+
+  // Filter timeslots by jornada
+  const filteredTimeslots = timeslots.filter(slot => {
+    const label = (slot.label || '').toUpperCase();
+    const order = Number(slot.order_index || 0);
+    const isManana = label.startsWith('M') || order <= 4;
+    const isTarde = label.startsWith('T') || order > 4;
+
+    if (jornadaFilter === 'manana') return isManana;
+    if (jornadaFilter === 'tarde') return isTarde;
+    return true;
+  });
+
   // Helper to filter assignments according to current view mode
   const getFilteredAssignments = () => {
     if (viewMode === 'nivel') {
@@ -208,6 +223,84 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
 
   return (
     <div className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 flex flex-col gap-3">
+      {/* Visual Helper Toolbar (Jornada & Density Controls) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+        {/* Left: Jornada filter */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mr-1">
+            Jornada:
+          </span>
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setJornadaFilter('todas')}
+              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+                jornadaFilter === 'todas'
+                  ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Todos los Bloques ({timeslots.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setJornadaFilter('manana')}
+              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+                jornadaFilter === 'manana'
+                  ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Mañana (M1 - M4)
+            </button>
+            <button
+              type="button"
+              onClick={() => setJornadaFilter('tarde')}
+              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+                jornadaFilter === 'tarde'
+                  ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Tarde (T1 - T4)
+            </button>
+          </div>
+        </div>
+
+        {/* Right: Density toggle & count */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium hidden md:inline">
+            Mostrando <strong>{filteredTimeslots.length}</strong> de {timeslots.length} bloques
+          </span>
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setDensity('normal')}
+              className={`p-1.5 rounded-md transition-all ${
+                density === 'normal'
+                  ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Vista normal (Detallada)"
+            >
+              <span className="material-symbols-outlined text-base">view_agenda</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDensity('compact')}
+              className={`p-1.5 rounded-md transition-all ${
+                density === 'compact'
+                  ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Vista compacta (Ver todo el día en pantalla)"
+            >
+              <span className="material-symbols-outlined text-base">table_rows</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Visual Helper Banner when dragging */}
       {draggingSection && (
         <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-indigo-900 dark:text-indigo-200 animate-fade-in">
@@ -246,12 +339,17 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
 
         {/* Timeslot Rows */}
         <div className="divide-y divide-slate-200 dark:divide-slate-800">
-          {timeslots.map((slot) => (
-            <div key={slot.id} className="grid grid-cols-6 min-h-[120px]">
+          {filteredTimeslots.map((slot) => (
+            <div
+              key={slot.id}
+              className={`grid grid-cols-6 transition-all ${
+                density === 'compact' ? 'min-h-[75px]' : 'min-h-[115px]'
+              }`}
+            >
               {/* Timeslot Label */}
-              <div className="p-3 bg-slate-50/50 dark:bg-slate-900/50 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-center items-center text-center">
+              <div className="p-2.5 bg-slate-50/50 dark:bg-slate-900/50 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-center items-center text-center">
                 <span className="font-bold text-xs text-slate-800 dark:text-slate-200">{slot.label}</span>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono font-semibold">
+                <span className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 font-mono font-semibold">
                   {slot.start_time} - {slot.end_time}
                 </span>
               </div>
@@ -269,7 +367,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                     onDragLeave={onDragLeave}
                     onDrop={(e) => onDrop(e, slot.id, dayOfWeek, 0)}
                     onClick={() => onSlotClick?.(slot.id, dayOfWeek, 0)}
-                    className={`p-2 border-r border-slate-200 dark:border-slate-800 last:border-r-0 transition-all flex flex-col gap-2 relative ${
+                    className={`p-1.5 sm:p-2 border-r border-slate-200 dark:border-slate-800 last:border-r-0 transition-all flex flex-col gap-1.5 relative ${
                       isTarget
                         ? 'bg-primary/15 ring-2 ring-primary ring-inset z-10'
                         : compatibility
@@ -279,7 +377,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                   >
                     {/* Compatibility Feasibility Indicator when Dragging */}
                     {compatibility && (
-                      <div className="text-[10px] font-bold py-1 px-1.5 rounded flex items-center justify-between gap-1 border border-current/20 mb-1 shrink-0 backdrop-blur-xs">
+                      <div className="text-[10px] font-bold py-0.5 px-1.5 rounded flex items-center justify-between gap-1 border border-current/20 mb-0.5 shrink-0 backdrop-blur-xs">
                         <span className="truncate">{compatibility.label}</span>
                         <span className={`size-2 rounded-full shrink-0 ${compatibility.dot}`} />
                       </div>
@@ -299,7 +397,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                       return (
                         <div
                           key={assignment.id}
-                          className={`group relative p-2.5 rounded-xl border transition-all shadow-xs hover:shadow-md ${
+                          className={`group relative p-2 rounded-lg border transition-all shadow-xs hover:shadow-md ${
                             conflict
                               ? conflict.type === 'CRITICAL'
                                 ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 text-rose-900 dark:text-rose-200 ring-1 ring-rose-400'
@@ -308,12 +406,12 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                           }`}
                         >
                           {/* Subject Header */}
-                          <div className="flex items-start justify-between gap-1 mb-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
+                          <div className="flex items-start justify-between gap-1 mb-0.5">
+                            <div className="flex items-center gap-1 flex-wrap">
                               <span className="font-bold text-xs text-slate-900 dark:text-white leading-tight">
                                 {assignment.subject_name || assignment.subject_code}
                               </span>
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase border ${getTypeStyle(assignment.section_type)}`}>
+                              <span className={`px-1.5 py-0.2 rounded text-[9px] uppercase border ${getTypeStyle(assignment.section_type)}`}>
                                 {assignment.section_type || 'TEO'}
                               </span>
                             </div>
@@ -346,7 +444,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                           </div>
 
                           {/* NRC and Details */}
-                          <div className="text-[11px] text-slate-600 dark:text-slate-400 flex flex-col gap-0.5 mt-1">
+                          <div className="text-[10px] text-slate-600 dark:text-slate-400 flex flex-col gap-0.5 mt-0.5">
                             <div className="flex items-center justify-between text-[10px] text-slate-500">
                               <span>NRC: <strong className="text-slate-800 dark:text-slate-200 font-mono">{assignment.nrc}</strong></span>
                               <span className="px-1.5 py-0.2 rounded font-black text-[9px] bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
@@ -355,7 +453,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                             </div>
 
                             {assignment.teacher_name && (
-                              <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300 truncate font-medium text-[10px] mt-0.5">
+                              <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300 truncate font-medium text-[10px]">
                                 <span className="material-symbols-outlined text-xs text-primary">person</span>
                                 <span className="truncate">{assignment.teacher_name}</span>
                               </div>
@@ -371,7 +469,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
 
                           {/* Conflict Warning Indicator */}
                           {conflict && (
-                            <div className={`mt-1.5 pt-1 border-t text-[10px] font-bold flex items-center gap-1 ${
+                            <div className={`mt-1 pt-1 border-t text-[10px] font-bold flex items-center gap-1 ${
                               conflict.type === 'CRITICAL' ? 'border-rose-300 text-rose-700 dark:text-rose-300' : 'border-amber-300 text-amber-700 dark:text-amber-300'
                             }`}>
                               <span className="material-symbols-outlined text-xs shrink-0">warning</span>

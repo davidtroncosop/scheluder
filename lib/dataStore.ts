@@ -311,11 +311,13 @@ export const getCustomTimeslots = (): LocalTimeslot[] => {
     if (list.length > 0) return list;
     return [
         { id: 'ts-m1', label: 'M1', start_time: '08:00', end_time: '09:20', order_index: 1, type: 'Mañana' },
-        { id: 'ts-m2', label: 'M2', start_time: '09:30', end_time: '10:50', order_index: 2, type: 'Mañana' },
-        { id: 'ts-m3', label: 'M3', start_time: '11:00', end_time: '12:20', order_index: 3, type: 'Mañana' },
-        { id: 'ts-t1', label: 'T1', start_time: '14:00', end_time: '15:20', order_index: 4, type: 'Tarde' },
-        { id: 'ts-t2', label: 'T2', start_time: '15:30', end_time: '16:50', order_index: 5, type: 'Tarde' },
-        { id: 'ts-t3', label: 'T3', start_time: '17:00', end_time: '18:20', order_index: 6, type: 'Tarde' },
+        { id: 'ts-m2', label: 'M2', start_time: '09:40', end_time: '11:00', order_index: 2, type: 'Mañana' },
+        { id: 'ts-m3', label: 'M3', start_time: '11:20', end_time: '12:40', order_index: 3, type: 'Mañana' },
+        { id: 'ts-m4', label: 'M4', start_time: '13:00', end_time: '14:20', order_index: 4, type: 'Mañana' },
+        { id: 'ts-t1', label: 'T1', start_time: '14:40', end_time: '16:00', order_index: 5, type: 'Tarde' },
+        { id: 'ts-t2', label: 'T2', start_time: '16:20', end_time: '17:40', order_index: 6, type: 'Tarde' },
+        { id: 'ts-t3', label: 'T3', start_time: '18:00', end_time: '19:20', order_index: 7, type: 'Tarde' },
+        { id: 'ts-t4', label: 'T4', start_time: '19:40', end_time: '21:00', order_index: 8, type: 'Tarde' },
     ];
 };
 

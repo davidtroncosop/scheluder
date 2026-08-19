@@ -187,8 +187,9 @@ const SchedulerPage: React.FC = () => {
       }
 
       // Set Timeslots
-      if (remoteTimeslots.length > 0) {
-        setTimeslots(remoteTimeslots.map(slot => ({
+      if (remoteTimeslots && remoteTimeslots.length > 0) {
+        const sorted = [...remoteTimeslots].sort((a, b) => Number(a.order_index || 0) - Number(b.order_index || 0));
+        setTimeslots(sorted.map(slot => ({
           id: slot.id,
           label: slot.label,
           start_time: slot.start_time,
