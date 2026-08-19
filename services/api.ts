@@ -162,6 +162,10 @@ class SchedulerAPI {
         return this.request<Teacher[]>('/teachers');
     }
 
+    async getTeacherAvailabilities(): Promise<Array<{ teacher_id: string; day_of_week: number; timeslot_id: string; status: string; teacher_name?: string }>> {
+        return this.request<Array<{ teacher_id: string; day_of_week: number; timeslot_id: string; status: string; teacher_name?: string }>>('/teachers-availabilities');
+    }
+
     async getTeacher(id: string): Promise<Teacher & { availability: any[] }> {
         return this.request<Teacher & { availability: any[] }>(`/teachers/${id}`);
     }

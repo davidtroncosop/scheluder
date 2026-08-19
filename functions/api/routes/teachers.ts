@@ -21,6 +21,27 @@ teacherRoutes.get('/teachers', authMiddleware, async (c) => {
     return c.json(teachers.results);
 });
 
+teacherRoutes.get('/teachers-availabilities', authMiddleware, async (c) => {
+    const db = c.env.DB;
+    const user = c.get('user') as UserPayload;
+
+    let query = `
+    SELECT ta.teacher_id, ta.day_of_week, ta.timeslot_id, ta.status, t.name as teacher_name
+    FROM teacher_availability ta
+    JOIN teachers t ON t.id = ta.teacher_id
+    WHERE t.is_active = 1
+    `;
+    const params: any[] = [];
+    if (user.role !== 'admin' && user.career_id) {
+        query += ' AND t.career_id = ?';
+        params.push(user.career_id);
+    }
+    query += ' ORDER BY ta.day_of_week, ta.timeslot_id';
+
+    const availabilities = await db.prepare(query).bind(...params).all();
+    return c.json(availabilities.results || []);
+});
+
 teacherRoutes.post('/teachers', authMiddleware, async (c) => {
     const user = c.get('user') as UserPayload;
     if (!canMutate(user)) return c.json({ error: 'No autorizado' }, 403);

@@ -61,9 +61,10 @@ const SchedulerPage: React.FC = () => {
 
   // View mode states
   const [viewMode, setViewMode] = useState<'nivel' | 'sala' | 'docente'>('nivel');
-  const [selectedViewLevel, setSelectedViewLevel] = useState<number>(1);
+  const [selectedViewLevel, setSelectedViewLevel] = useState<number>(0);
   const [selectedViewTeacher, setSelectedViewTeacher] = useState<string | null>(null);
-  const [selectedViewRoom, setSelectedViewRoom] = useState<string>('SALA 201');
+  const [selectedViewRoom, setSelectedViewRoom] = useState<string>('TODAS');
+  const [teacherAvailabilities, setTeacherAvailabilities] = useState<Array<{ teacher_id: string; day_of_week: number; timeslot_id: string; status: string; teacher_name?: string }>>([]);
 
   // Drag and Drop & Room Selector states
   const [draggingSection, setDraggingSection] = useState<Section | null>(null);
@@ -157,7 +158,7 @@ const SchedulerPage: React.FC = () => {
     setError(null);
     try {
       // 1. Fetch remote data with api client
-      const [remoteSchedule, remoteSections, remoteTimeslots, remoteConflicts, remoteStatus, remoteRooms, remoteTeachers] = await Promise.all([
+      const [remoteSchedule, remoteSections, remoteTimeslots, remoteConflicts, remoteStatus, remoteRooms, remoteTeachers, remoteAvails] = await Promise.all([
         api.getSchedule(selectedPeriod).catch(() => []),
         api.getSectionsForContext(selectedPeriod).catch(() => []),
         api.getTimeslots().catch(() => []),
@@ -165,7 +166,12 @@ const SchedulerPage: React.FC = () => {
         api.getScheduleStatus(selectedPeriod).catch(() => ({ status: 'draft' as const })),
         api.getRooms().catch(() => []),
         api.getTeachers().catch(() => []),
+        api.getTeacherAvailabilities().catch(() => []),
       ]);
+
+      if (remoteAvails && remoteAvails.length > 0) {
+        setTeacherAvailabilities(remoteAvails);
+      }
 
       // Set Rooms
       if (remoteRooms.length > 0) {
@@ -175,8 +181,8 @@ const SchedulerPage: React.FC = () => {
           type: r.type,
           capacity: r.capacity,
         })));
-        if (!selectedViewRoom && remoteRooms[0]) {
-          setSelectedViewRoom(remoteRooms[0].name);
+        if (!selectedViewRoom || selectedViewRoom === 'SALA 201') {
+          setSelectedViewRoom('TODAS');
         }
       }
 
@@ -660,6 +666,9 @@ const SchedulerPage: React.FC = () => {
                 parallelCount={3}
                 draggingSection={draggingSection}
                 dropTarget={dropTarget}
+                availableRooms={availableRooms}
+                teacherAvailabilities={teacherAvailabilities}
+                teachers={teachers}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}

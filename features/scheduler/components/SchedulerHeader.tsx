@@ -127,6 +127,18 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
         {/* Secondary View Filter: Levels */}
         {viewMode === 'nivel' && (
           <div className="flex items-center gap-1 overflow-x-auto max-w-[280px] sm:max-w-none custom-scrollbar py-0.5">
+            <button
+              type="button"
+              onClick={() => onChangeViewLevel(0)}
+              className={`px-2 h-7 shrink-0 rounded-md text-xs font-black uppercase tracking-wider transition-all ${
+                selectedViewLevel === 0
+                  ? 'bg-primary text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+              }`}
+              title="Ver asignaciones de todos los niveles en simultáneo"
+            >
+              Todos
+            </button>
             {displayLevels.map(lvl => (
               <button
                 key={lvl}
@@ -151,6 +163,7 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
             onChange={(e) => onChangeViewRoom(e.target.value)}
             className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-md px-2 py-1.5 border-0 focus:ring-2 focus:ring-primary font-bold"
           >
+            <option value="TODAS">Todas las salas</option>
             {availableRooms.map(r => (
               <option key={r.id} value={r.name}>{r.name}</option>
             ))}
@@ -163,7 +176,7 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
             onChange={(e) => onChangeViewTeacher(e.target.value)}
             className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-md px-2 py-1.5 border-0 focus:ring-2 focus:ring-primary font-bold"
           >
-            <option value="">Seleccionar docente...</option>
+            <option value="">Todos los docentes</option>
             {availableTeachers.map(t => (
               <option key={t} value={t}>{t}</option>
             ))}
