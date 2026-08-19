@@ -226,25 +226,34 @@ export async function validateAssignment(db: D1Database, params: {
 
     if (levelClash) {
         conflicts.push({
-            type: 'WARNING',
+            type: 'CRITICAL',
             rule_code: 'LEVEL_CLASH',
-            description: `Alumnos de nivel ${section.level} ya tienen otra clase en ese horario`,
+            description: `Tope de horario: Alumnos de nivel ${section.level} ya tienen la clase ${levelClash.subject_name || 'NRC ' + levelClash.nrc} en ese horario`,
         });
     }
 
-    if (section.type !== room.type && section.type !== 'TEO') {
+    const isTypeCompatible = (secType?: string, rmType?: string) => {
+        const s = (secType || 'TEO').toUpperCase();
+        const r = (rmType || 'TEO').toUpperCase();
+        if (s === 'LAB') return r === 'LAB' || r === 'SIM';
+        if (s === 'SIM') return r === 'SIM';
+        if (s === 'TAL') return r === 'TAL';
+        return r === 'TEO' || r === 'AUD';
+    };
+
+    if (!isTypeCompatible(section.type, room.type)) {
         conflicts.push({
-            type: 'WARNING',
+            type: 'CRITICAL',
             rule_code: 'ROOM_TYPE_MISMATCH',
-            description: `La sección requiere sala tipo ${section.type} pero se asignó ${room.type}`,
+            description: `Incompatibilidad de sala: La sección requiere sala tipo ${section.type} y no puede dictarse en ${room.type}`,
         });
     }
 
     if (section.expected_students > room.capacity) {
         conflicts.push({
-            type: 'WARNING',
+            type: 'CRITICAL',
             rule_code: 'OVERCAPACITY',
-            description: `La sala tiene capacidad ${room.capacity} pero la sección espera ${section.expected_students} alumnos`,
+            description: `Aforo insuficiente: La sala tiene capacidad ${room.capacity} pero la sección espera ${section.expected_students} alumnos`,
         });
     }
 
@@ -258,7 +267,7 @@ export async function validateAssignment(db: D1Database, params: {
             const hasExclusive = roomReqs.results.some((r: any) => r.requirement_level === 'EXCLUSIVE');
             if (hasExclusive && !matching) {
                 conflicts.push({
-                    type: 'WARNING',
+                    type: 'CRITICAL',
                     rule_code: 'ROOM_NOT_COMPATIBLE',
                     description: `Esta asignatura requiere una de sus salas exclusivas designadas`,
                 });
@@ -333,16 +342,26 @@ export async function findBestAlternative(db: D1Database, assignment: any) {
     for (const timeslot of timeslotsResult.results as any[]) {
         for (let day = 1; day <= 5; day++) {
             for (const room of roomsResult.results as any[]) {
+                const isTypeCompatible = (secType?: string, rmType?: string) => {
+                    const s = (secType || 'TEO').toUpperCase();
+                    const r = (rmType || 'TEO').toUpperCase();
+                    if (s === 'LAB') return r === 'LAB' || r === 'SIM';
+                    if (s === 'SIM') return r === 'SIM';
+                    if (s === 'TAL') return r === 'TAL';
+                    return r === 'TEO' || r === 'AUD';
+                };
+
                 const slotKey = `${timeslot.id}|${day}`;
                 if (occupiedRooms.has(`${room.id}|${slotKey}`)) continue;
                 if (teacherId && (occupiedTeachers.has(slotKey) || blockedTeacherSlots.has(slotKey))) continue;
                 if (parentChildSlots.has(slotKey)) continue;
+                if (occupiedLevels.has(slotKey)) continue;
+                if (room.capacity < section.expected_students) continue;
+                if (!isTypeCompatible(section.type, room.type)) continue;
+
                 let score = 100;
                 if (room.type === section.type) score += 30;
-                else if (section.type !== 'TEO') score -= 30;
-                if (room.capacity < section.expected_students) score -= 40;
                 if (day === 5 && timeslot.order_index >= 6) score -= 15;
-                if (occupiedLevels.has(slotKey)) score -= 15;
                 candidates.push({ room_id: room.id, room_name: room.name, timeslot_id: timeslot.id, timeslot_label: timeslot.label, day_of_week: day, score });
             }
         }
