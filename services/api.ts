@@ -326,6 +326,7 @@ class SchedulerAPI {
         timeslot_id: string;
         day_of_week: number;
         period_id: string;
+        parallel_index?: number;
     }): Promise<{ id: string; warnings: any[] }> {
         return this.request<{ id: string; warnings: any[] }>('/schedule/assign', {
             method: 'POST',

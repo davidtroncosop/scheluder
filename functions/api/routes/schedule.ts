@@ -139,7 +139,7 @@ scheduleRoutes.post('/schedule/publish', authMiddleware, async (c) => {
 scheduleRoutes.post('/schedule/assign', authMiddleware, async (c) => {
     const db = c.env.DB;
     const user = c.get('user') as UserPayload;
-    const { section_id, room_id, timeslot_id, day_of_week, period_id } = await c.req.json();
+    const { section_id, room_id, timeslot_id, day_of_week, period_id, parallel_index } = await c.req.json();
 
     try {
         const section = await db.prepare(`
@@ -187,11 +187,11 @@ scheduleRoutes.post('/schedule/assign', authMiddleware, async (c) => {
         const id = crypto.randomUUID();
         await db.prepare(`
       INSERT INTO schedule_assignments 
-      (id, career_id, period_id, section_id, room_id, timeslot_id, day_of_week, assigned_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(id, targetCareerId, period_id, section_id, room_id, timeslot_id, day_of_week, user.id).run();
+      (id, career_id, period_id, section_id, room_id, timeslot_id, day_of_week, parallel_index, assigned_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(id, targetCareerId, period_id, section_id, room_id, timeslot_id, day_of_week, parallel_index || 0, user.id).run();
         await saveScheduleStatus(db, targetCareerId, period_id, 'draft', user.id);
-        await recordAudit(db, user, 'ASSIGN', 'assignment', id, null, { section_id, room_id, timeslot_id, day_of_week, period_id });
+        await recordAudit(db, user, 'ASSIGN', 'assignment', id, null, { section_id, room_id, timeslot_id, day_of_week, parallel_index: parallel_index || 0, period_id });
 
         for (const conflict of conflicts.filter(c => c.type === 'WARNING')) {
             await db.prepare(`

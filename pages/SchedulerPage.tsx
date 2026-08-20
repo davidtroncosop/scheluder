@@ -365,7 +365,7 @@ const SchedulerPage: React.FC = () => {
   };
 
   // Direct unified execution helper
-  const executeAssignment = async (section: Section, roomId: string, timeslotId: string, dayOfWeek: number) => {
+  const executeAssignment = async (section: Section, roomId: string, timeslotId: string, dayOfWeek: number, parallelIndex = 0) => {
     if (!selectedPeriod) return;
     try {
       setSaving(true);
@@ -377,6 +377,7 @@ const SchedulerPage: React.FC = () => {
           timeslot_id: timeslotId,
           day_of_week: dayOfWeek,
           period_id: selectedPeriod,
+          parallel_index: parallelIndex,
         });
 
         const roomObj = availableRooms.find(r => r.id === roomId);
@@ -395,7 +396,7 @@ const SchedulerPage: React.FC = () => {
           timeslot_id: timeslotId,
           day_of_week: dayOfWeek,
           period_id: selectedPeriod,
-          parallel_index: 0,
+          parallel_index: parallelIndex,
           nrc: section.nrc,
           subject_code: section.subject_code,
           subject_name: section.subject_name,
@@ -409,7 +410,7 @@ const SchedulerPage: React.FC = () => {
         setAssignments(prev => [...prev, newAsg]);
         setHasChanges(true);
       }
-      addAuditEntry('assign', `Asignado NRC ${section.nrc} a día ${dayOfWeek}`);
+      addAuditEntry('assign', `Asignado NRC ${section.nrc} a día ${dayOfWeek} (Secc. ${parallelIndex + 1})`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error al asignar la sección';
       setError(msg);
@@ -426,7 +427,7 @@ const SchedulerPage: React.FC = () => {
 
     const chosenRoomId = activeSchedulingSection.room_id || activeSchedulingSection.preferred_room_id;
     if (chosenRoomId) {
-      await executeAssignment(activeSchedulingSection, chosenRoomId, timeslotId, dayOfWeek);
+      await executeAssignment(activeSchedulingSection, chosenRoomId, timeslotId, dayOfWeek, parallelIndex);
     } else {
       const freeRoom = findFreeCompatibleRoom(
         activeSchedulingSection.type,
@@ -435,7 +436,7 @@ const SchedulerPage: React.FC = () => {
         activeSchedulingSection.expected_students || 0
       );
       if (freeRoom) {
-        await executeAssignment(activeSchedulingSection, freeRoom.id, timeslotId, dayOfWeek);
+        await executeAssignment(activeSchedulingSection, freeRoom.id, timeslotId, dayOfWeek, parallelIndex);
       } else {
         setRoomSelectorData({
           section: activeSchedulingSection,
@@ -465,7 +466,7 @@ const SchedulerPage: React.FC = () => {
 
     const chosenRoomId = sectionToAssign.room_id || sectionToAssign.preferred_room_id;
     if (chosenRoomId) {
-      await executeAssignment(sectionToAssign, chosenRoomId, timeslotId, dayOfWeek);
+      await executeAssignment(sectionToAssign, chosenRoomId, timeslotId, dayOfWeek, parallelIndex);
     } else {
       const freeRoom = findFreeCompatibleRoom(
         sectionToAssign.type,
@@ -474,7 +475,7 @@ const SchedulerPage: React.FC = () => {
         sectionToAssign.expected_students || 0
       );
       if (freeRoom) {
-        await executeAssignment(sectionToAssign, freeRoom.id, timeslotId, dayOfWeek);
+        await executeAssignment(sectionToAssign, freeRoom.id, timeslotId, dayOfWeek, parallelIndex);
       } else {
         setRoomSelectorData({
           section: sectionToAssign,
@@ -488,8 +489,8 @@ const SchedulerPage: React.FC = () => {
 
   const handleConfirmRoomAssignment = async (roomId: string) => {
     if (!roomSelectorData || !selectedPeriod) return;
-    const { section, timeslotId, dayOfWeek } = roomSelectorData;
-    await executeAssignment(section, roomId, timeslotId, dayOfWeek);
+    const { section, timeslotId, dayOfWeek, parallelIndex } = roomSelectorData;
+    await executeAssignment(section, roomId, timeslotId, dayOfWeek, parallelIndex ?? 0);
   };
 
   // Auto assign solver handler with Live Progress Tracking
