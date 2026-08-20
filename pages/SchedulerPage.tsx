@@ -93,6 +93,7 @@ const SchedulerPage: React.FC = () => {
 
   // Sidebar & Teacher states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [modalDefaultLevel, setModalDefaultLevel] = useState<number>(1);
   const [teachers, setTeachers] = useState<dataStore.ImportedTeacher[]>([]);
   const [auditLog, setAuditLog] = useState<AuditLogItem[]>([
     { id: '1', timestamp: new Date(Date.now() - 3600000), action: 'save', description: 'Guardado borrador', user: 'Coordinador' },
@@ -614,8 +615,9 @@ const SchedulerPage: React.FC = () => {
   };
 
   // Section Modal (Backlog CRUD) handlers
-  const handleOpenSectionModal = (section?: Section) => {
+  const handleOpenSectionModal = (section?: Section | null, preselectedLevel?: number) => {
     setEditingSection(section || null);
+    setModalDefaultLevel(preselectedLevel || (section ? section.level : (selectedViewLevel > 0 ? selectedViewLevel : 1)));
     setIsSectionModalOpen(true);
   };
 
@@ -626,6 +628,7 @@ const SchedulerPage: React.FC = () => {
     type: string;
     hours_per_week: number;
     level: number;
+    expected_students?: number;
     teacher_name: string;
     parent_section_id: string;
   }) => {
@@ -641,6 +644,7 @@ const SchedulerPage: React.FC = () => {
             type: formData.type,
             parent_section_id: formData.parent_section_id || null,
             hours_per_week: formData.hours_per_week,
+            expected_students: formData.expected_students || 30,
           });
         }
       } else {
@@ -653,6 +657,7 @@ const SchedulerPage: React.FC = () => {
             type: formData.type,
             parent_section_id: formData.parent_section_id || null,
             hours_per_week: formData.hours_per_week,
+            expected_students: formData.expected_students || 30,
           });
         }
       }
@@ -755,6 +760,7 @@ const SchedulerPage: React.FC = () => {
           selectedViewLevel={selectedViewLevel}
           onChangeViewLevel={setSelectedViewLevel}
           availableLevels={availableLevels}
+          onAddSectionForLevel={(lvl) => handleOpenSectionModal(null, lvl)}
           selectedViewRoom={selectedViewRoom}
           onChangeViewRoom={setSelectedViewRoom}
           availableRooms={availableRooms}
@@ -858,6 +864,7 @@ const SchedulerPage: React.FC = () => {
           allSubjects={allSubjects}
           availableTeachers={availableTeachersList}
           existingTheories={sections.filter(s => s.type === 'TEO')}
+          defaultLevel={modalDefaultLevel}
           onSave={handleSaveSection}
           onDelete={handleDeleteSection}
         />

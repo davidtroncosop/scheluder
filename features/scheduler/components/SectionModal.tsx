@@ -9,6 +9,7 @@ interface SectionModalProps {
   allSubjects: ImportedSubject[];
   availableTeachers: string[];
   existingTheories: Section[];
+  defaultLevel?: number;
   onSave: (data: {
     id?: string;
     nrc: string;
@@ -16,6 +17,7 @@ interface SectionModalProps {
     type: string;
     hours_per_week: number;
     level: number;
+    expected_students?: number;
     teacher_name: string;
     parent_section_id: string;
   }) => Promise<void>;
@@ -29,6 +31,7 @@ export const SectionModal: React.FC<SectionModalProps> = ({
   allSubjects,
   availableTeachers,
   existingTheories,
+  defaultLevel,
   onSave,
   onDelete,
 }) => {
@@ -37,6 +40,7 @@ export const SectionModal: React.FC<SectionModalProps> = ({
   const [type, setType] = useState('TEO');
   const [hours, setHours] = useState(2);
   const [level, setLevel] = useState(1);
+  const [expectedStudents, setExpectedStudents] = useState(30);
   const [teacherName, setTeacherName] = useState('');
   const [parentSectionId, setParentSectionId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -48,18 +52,23 @@ export const SectionModal: React.FC<SectionModalProps> = ({
       setType(section.type || 'TEO');
       setHours(Number(section.hours_per_week || 2));
       setLevel(Number(section.level || 1));
+      setExpectedStudents(Number(section.expected_students || 30));
       setTeacherName(section.teacher_name || '');
       setParentSectionId(section.parent_section_id || '');
     } else {
       setNrc('');
-      setSubjectId(allSubjects[0]?.id || '');
+      const targetLvl = defaultLevel && defaultLevel > 0 ? defaultLevel : 1;
+      const matchedSubjects = allSubjects.filter(s => Number(s.nivel || 1) === targetLvl);
+      const chosenSub = matchedSubjects[0] || allSubjects[0];
+      setSubjectId(chosenSub?.id || '');
       setType('TEO');
       setHours(2);
-      setLevel(1);
+      setLevel(targetLvl);
+      setExpectedStudents(30);
       setTeacherName('');
       setParentSectionId('');
     }
-  }, [section, allSubjects]);
+  }, [section, allSubjects, defaultLevel]);
 
   if (!isOpen) return null;
 
@@ -74,6 +83,7 @@ export const SectionModal: React.FC<SectionModalProps> = ({
         type,
         hours_per_week: hours,
         level,
+        expected_students: expectedStudents,
         teacher_name: teacherName,
         parent_section_id: type === 'TEO' ? '' : parentSectionId,
       });
@@ -189,11 +199,11 @@ export const SectionModal: React.FC<SectionModalProps> = ({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-3">
             {/* Hours */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Horas / Semana
+                Horas / Sem.
               </label>
               <input
                 type="number"
@@ -201,14 +211,14 @@ export const SectionModal: React.FC<SectionModalProps> = ({
                 max="12"
                 value={hours}
                 onChange={(e) => setHours(parseInt(e.target.value) || 2)}
-                className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white"
+                className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white font-mono"
               />
             </div>
 
             {/* Level */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Nivel / Semestre
+                Nivel
               </label>
               <input
                 type="number"
@@ -216,7 +226,23 @@ export const SectionModal: React.FC<SectionModalProps> = ({
                 max="12"
                 value={level}
                 onChange={(e) => setLevel(parseInt(e.target.value) || 1)}
-                className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white"
+                className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white font-mono"
+              />
+            </div>
+
+            {/* Expected Students */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Alumnos
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="300"
+                value={expectedStudents}
+                onChange={(e) => setExpectedStudents(parseInt(e.target.value) || 30)}
+                className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white font-mono"
+                title="Cantidad de alumnos matriculados o esperados en esta sección"
               />
             </div>
           </div>

@@ -11,6 +11,7 @@ interface SchedulerHeaderProps {
   selectedViewLevel: number;
   onChangeViewLevel: (level: number) => void;
   availableLevels?: number[];
+  onAddSectionForLevel?: (level: number) => void;
   selectedViewRoom: string;
   onChangeViewRoom: (room: string) => void;
   availableRooms: Array<{ id: string; name: string }>;
@@ -37,6 +38,7 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
   selectedViewLevel,
   onChangeViewLevel,
   availableLevels = [1, 2, 3, 4, 5, 6, 7, 8],
+  onAddSectionForLevel,
   selectedViewRoom,
   onChangeViewRoom,
   availableRooms,
@@ -154,6 +156,19 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
                 {lvl}°
               </button>
             ))}
+
+            {/* Quick Add Section for this Level */}
+            {selectedViewLevel > 0 && onAddSectionForLevel && (
+              <button
+                type="button"
+                onClick={() => onAddSectionForLevel(selectedViewLevel)}
+                className="flex items-center gap-1 px-2.5 h-7 shrink-0 rounded-md text-xs font-bold bg-primary/10 text-primary hover:bg-primary hover:text-white border border-primary/30 transition-all shadow-xs ml-1"
+                title={`Agregar una nueva sección o paralelo al Nivel ${selectedViewLevel}`}
+              >
+                <span className="material-symbols-outlined text-sm">add_circle</span>
+                <span>+ Sección N{selectedViewLevel}</span>
+              </button>
+            )}
           </div>
         )}
 

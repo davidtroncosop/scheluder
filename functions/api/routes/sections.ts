@@ -138,9 +138,9 @@ sectionRoutes.put('/sections/:id', authMiddleware, async (c) => {
     if (parentError) return c.json({ error: parentError }, 400);
     try {
         await c.env.DB.prepare(`UPDATE sections SET subject_id = ?, teacher_id = ?, nrc = ?, section_code = ?, type = ?,
-            parent_section_id = ?, hours_per_week = ?, updated_at = datetime('now') WHERE id = ?`)
+            parent_section_id = ?, hours_per_week = ?, expected_students = ?, updated_at = datetime('now') WHERE id = ?`)
             .bind(body.subject_id, body.teacher_id || null, body.nrc, body.section_code || null, sectionType,
-                parentSectionId, Number(body.hours_per_week || 2), id).run();
+                parentSectionId, Number(body.hours_per_week || 2), Number(body.expected_students || 30), id).run();
     } catch (error) {
         return c.json({ error: sectionRelationshipError(error) }, 409);
     }

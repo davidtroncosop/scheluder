@@ -15,7 +15,7 @@ interface SchedulerSidebarProps {
   onToggleCollapse: () => void;
   onDragStart: (e: React.DragEvent, section: Section) => void;
   onDragEnd: () => void;
-  onOpenSectionModal: (section?: Section) => void;
+  onOpenSectionModal: (section?: Section | null, preselectedLevel?: number) => void;
   onTeacherSelect?: (teacherName: string) => void;
 }
 
@@ -238,6 +238,17 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
           <div>
             <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
               <span>Nivel Académico</span>
+              {selectedLevelFilter && (
+                <button
+                  type="button"
+                  onClick={() => onOpenSectionModal(null, selectedLevelFilter)}
+                  className="text-[10px] text-primary hover:underline flex items-center gap-0.5 font-bold cursor-pointer"
+                  title={`Crear una nueva sección para Nivel ${selectedLevelFilter}`}
+                >
+                  <span className="material-symbols-outlined text-xs">add_circle</span>
+                  <span>+ Sección N{selectedLevelFilter}</span>
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-1 overflow-x-auto custom-scrollbar pb-1">
               <button
