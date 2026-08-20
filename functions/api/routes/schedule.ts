@@ -347,11 +347,15 @@ scheduleRoutes.get('/schedule/score', authMiddleware, async (c) => {
     const parentChildBusy = new Set(rows
         .filter(row => areDirectParentAndChild(targetRelationship, { id: row.section_id, parent_section_id: row.parent_section_id }))
         .map(row => `${row.timeslot_id}:${row.day_of_week}`));
-    const levelBusy = new Set(rows.filter(row => (
+    const levelCounts = new Map<string, number>();
+    rows.filter(row => (
         row.level === section.level &&
         row.career_id === section.career_id &&
         shouldApplyLevelClash(targetRelationship, { id: row.section_id, parent_section_id: row.parent_section_id })
-    )).map(row => `${row.timeslot_id}:${row.day_of_week}`));
+    )).forEach(row => {
+        const key = `${row.timeslot_id}:${row.day_of_week}`;
+        levelCounts.set(key, (levelCounts.get(key) || 0) + 1);
+    });
     const blocked = new Set((availability.results as any[]).filter(row => row.status === 'blocked').map(row => `${row.timeslot_id}:${row.day_of_week}`));
     const preferred = new Set((availability.results as any[]).filter(row => row.status === 'preference').map(row => `${row.timeslot_id}:${row.day_of_week}`));
     const orderById = new Map((timeslots.results as any[]).map(row => [row.id, row.order_index]));
@@ -374,7 +378,7 @@ scheduleRoutes.get('/schedule/score', authMiddleware, async (c) => {
                 if (roomBusy.has(`${room.id}:${slotKey}`)) continue;
                 if (teacherBusy.has(slotKey) || blocked.has(slotKey)) continue;
                 if (parentChildBusy.has(slotKey)) continue;
-                if (levelBusy.has(slotKey)) continue;
+                if ((levelCounts.get(slotKey) || 0) >= 3) continue; // Allow up to 3 parallel sections per level
                 if (room.capacity < section.expected_students) continue;
                 if (!isTypeCompatible(section.type, room.type)) continue;
 

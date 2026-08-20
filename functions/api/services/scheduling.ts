@@ -218,17 +218,18 @@ export async function validateAssignment(db: D1Database, params: {
         });
     }
 
-    const levelClash = simultaneous.find(row => (
+    const sameLevelAssigned = simultaneous.filter(row => (
         row.level === section.level &&
         row.career_id === section.career_id &&
         shouldApplyLevelClash(currentRelationship, { id: row.section_id, parent_section_id: row.parent_section_id })
     ));
 
-    if (levelClash) {
+    const MAX_CONCURRENT_SECTIONS_PER_LEVEL = 3;
+    if (sameLevelAssigned.length >= MAX_CONCURRENT_SECTIONS_PER_LEVEL) {
         conflicts.push({
             type: 'CRITICAL',
             rule_code: 'LEVEL_CLASH',
-            description: `Tope de horario: Alumnos de nivel ${section.level} ya tienen la clase ${levelClash.subject_name || 'NRC ' + levelClash.nrc} en ese horario`,
+            description: `Tope de nivel: El nivel ${section.level} ya cuenta con ${sameLevelAssigned.length} secciones en paralelo (máximo permitido: ${MAX_CONCURRENT_SECTIONS_PER_LEVEL})`,
         });
     }
 
@@ -330,13 +331,14 @@ export async function findBestAlternative(db: D1Database, assignment: any) {
             .filter(row => areDirectParentAndChild(targetRelationship, { id: row.section_id, parent_section_id: row.parent_section_id }))
             .map(row => `${row.timeslot_id}|${row.day_of_week}`),
     );
-    const occupiedLevels = new Set(
-        existing.filter(row => row.level === section.level && shouldApplyLevelClash(
-            targetRelationship,
-            { id: row.section_id, parent_section_id: row.parent_section_id },
-        ))
-            .map(row => `${row.timeslot_id}|${row.day_of_week}`),
-    );
+    const occupiedLevelCounts = new Map<string, number>();
+    existing.filter(row => row.level === section.level && shouldApplyLevelClash(
+        targetRelationship,
+        { id: row.section_id, parent_section_id: row.parent_section_id },
+    )).forEach(row => {
+        const key = `${row.timeslot_id}|${row.day_of_week}`;
+        occupiedLevelCounts.set(key, (occupiedLevelCounts.get(key) || 0) + 1);
+    });
     const candidates: any[] = [];
 
     for (const timeslot of timeslotsResult.results as any[]) {
@@ -355,7 +357,7 @@ export async function findBestAlternative(db: D1Database, assignment: any) {
                 if (occupiedRooms.has(`${room.id}|${slotKey}`)) continue;
                 if (teacherId && (occupiedTeachers.has(slotKey) || blockedTeacherSlots.has(slotKey))) continue;
                 if (parentChildSlots.has(slotKey)) continue;
-                if (occupiedLevels.has(slotKey)) continue;
+                if ((occupiedLevelCounts.get(slotKey) || 0) >= 3) continue;
                 if (room.capacity < section.expected_students) continue;
                 if (!isTypeCompatible(section.type, room.type)) continue;
 

@@ -160,13 +160,16 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
       }
     }
 
-    // 2. Check Level Clash (Tope de Nivel)
-    const levelClash = assignments.find(
+    // 2. Check Level Clash (Tope de Nivel) - Up to 3 parallel sections allowed per level
+    const sameLevelAssigned = assignments.filter(
       a => a.day_of_week === dayOfWeek &&
            a.timeslot_id === timeslotId &&
            Number(a.level) === Number(targetSection.level) &&
            a.section_id !== targetSection.id
     );
+    const levelClash = sameLevelAssigned.length >= 3
+      ? { ...sameLevelAssigned[0], subject_name: `Nivel ${targetSection.level} saturado (3 secciones en paralelo)` }
+      : null;
 
     // 3. Check Room Availability
     const sectionType = (targetSection.type || 'TEO').toUpperCase();
