@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateICalendar, generateScheduleCsv } from './export';
+import { generateICalendar, generateScheduleCsv, generateSchedulePdf } from './export';
 import type { SchedulerAssignment as Assignment } from './model';
 
 const mockAssignments: Assignment[] = [
@@ -70,11 +70,30 @@ describe('scheduler export utilities', () => {
     const csv = generateScheduleCsv(mockAssignments);
     const lines = csv.split('\n');
 
-    expect(lines[0]).toBe('Día,Bloque,Inicio,Fin,NRC,Código,Asignatura,Nivel,Tipo,Docente,Sala');
+    expect(lines[0]).toBe('Día,Bloque,Inicio,Fin,NRC,Sección,Código,Asignatura,Nivel,Tipo,Docente,Sala');
     expect(lines[1]).toContain('Lunes');
     expect(lines[1]).toContain('KIN101');
     expect(lines[1]).toContain('Dr. Soto');
     expect(lines[2]).toContain('Miércoles');
     expect(lines[2]).toContain('LAB 1');
+  });
+
+  it('generates a clean vector-based PDF document without errors', () => {
+    const doc = generateSchedulePdf({
+      assignments: mockAssignments,
+      timeslots: [
+        { id: 'ts-1', label: 'M1', start_time: '08:30', end_time: '10:00', order_index: 1 },
+        { id: 'ts-2', label: 'M2', start_time: '10:15', end_time: '11:45', order_index: 2 },
+      ],
+      periodName: 'Primer Semestre 2026',
+      careerName: 'Kinesiología',
+      viewMode: 'nivel',
+      selectedLevel: 1,
+      parallelTracks: 2,
+    });
+
+    expect(doc).toBeDefined();
+    expect(typeof doc.save).toBe('function');
+    expect(typeof doc.output).toBe('function');
   });
 });

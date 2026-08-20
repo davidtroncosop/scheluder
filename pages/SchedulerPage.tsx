@@ -26,6 +26,7 @@ import { AssignmentModal } from '../features/scheduler/components/AssignmentModa
 import { SectionModal } from '../features/scheduler/components/SectionModal';
 import { RoomSelectorModal } from '../features/scheduler/components/RoomSelectorModal';
 import { ExportModal } from '../features/scheduler/components/ExportModal';
+import { generateSchedulePdf } from '../features/scheduler/export';
 import { AuditDrawer, type AuditLogItem } from '../features/scheduler/components/AuditDrawer';
 
 export type { SchedulerConflict as Conflict } from '../features/scheduler/model';
@@ -731,17 +732,34 @@ const SchedulerPage: React.FC = () => {
 
   // PDF Export
   const handleExportPdf = async () => {
-    if (!gridContainerRef.current) return;
-    const canvas = await html2canvas(gridContainerRef.current, { scale: 2 });
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF('landscape', 'mm', 'a3');
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    try {
+      const periodObj = periods.find(p => p.id === selectedPeriod);
+      const filtered = assignments.filter(a => {
+        if (viewMode === 'nivel' && selectedViewLevel > 0) return a.level === selectedViewLevel;
+        if (viewMode === 'sala' && selectedViewRoom && selectedViewRoom !== 'TODAS') return a.room_name === selectedViewRoom;
+        if (viewMode === 'docente' && selectedViewTeacher) return a.teacher_name === selectedViewTeacher;
+        return true;
+      });
 
-    pdf.text(`Planificación Académica - ${periods.find(p => p.id === selectedPeriod)?.name || selectedPeriod}`, 15, 15);
-    pdf.addImage(imgData, 'PNG', 10, 25, pdfWidth - 20, pdfHeight - 20);
-    pdf.save(`horario_${selectedPeriod}_${new Date().toISOString().split('T')[0]}.pdf`);
-    addAuditEntry('export_pdf', `Exportado documento PDF del horario`);
+      const doc = generateSchedulePdf({
+        assignments: filtered,
+        timeslots,
+        periodName: periodObj?.name || 'Horario Académico',
+        careerName: 'Planificación Académica',
+        viewMode,
+        selectedLevel: selectedViewLevel,
+        selectedRoom: selectedViewRoom,
+        selectedTeacher: selectedViewTeacher,
+        parallelTracks: 2,
+      });
+
+      const fileName = `horario_${(periodObj?.name || 'academico').toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(fileName);
+      addAuditEntry('export_pdf', `Exportado documento PDF del horario (${fileName})`);
+    } catch (err) {
+      console.error('Error al generar PDF:', err);
+      setError('No fue posible generar el documento PDF');
+    }
   };
 
   const totalRequired = useMemo(() => sections.reduce((acc, s) => acc + Number(s.hours_per_week || 0), 0), [sections]);
