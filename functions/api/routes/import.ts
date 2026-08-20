@@ -282,7 +282,8 @@ importRoutes.post('/import/horarios', authMiddleware, async (c) => {
         const firstRow = section.row;
         const teacherId = teacherIds.get(firstRow['RUT Docente'] || firstRow.rut_docente || '') || null;
         const parentSectionId = section.parentNrc ? availableSections.get(section.parentNrc)!.id : null;
-        const sectionCode = String(firstRow.Seccion || firstRow.seccion || '').trim() || null;
+        const sectionCode = String(firstRow.Seccion || firstRow.seccion || firstRow.Sección || firstRow.sección || firstRow.Paralelo || firstRow.paralelo || firstRow.Grupo || firstRow.grupo || '').trim() || null;
+        const expectedStudents = parseInt(firstRow.Estudiantes || firstRow.estudiantes || firstRow.Alumnos || firstRow.alumnos || firstRow.Cupos || firstRow.cupos || firstRow.Aforo || firstRow.aforo || firstRow.Capacidad || firstRow.capacidad || '30') || 30;
         statements.push(db.prepare(`INSERT INTO sections (id, period_id, career_id, subject_id, teacher_id, nrc, section_code, type, parent_section_id, hours_per_week, expected_students, priority)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             ON CONFLICT(period_id, career_id, nrc) DO UPDATE SET subject_id = excluded.subject_id, teacher_id = excluded.teacher_id,
@@ -290,8 +291,8 @@ importRoutes.post('/import/horarios', authMiddleware, async (c) => {
             hours_per_week = excluded.hours_per_week, expected_students = excluded.expected_students,
             updated_at = datetime('now')`)
             .bind(section.id, period_id, targetCareerId, section.subjectId, teacherId, section.nrc, sectionCode,
-                section.type, parentSectionId, parseInt(firstRow.Horas || firstRow.horas || '2'),
-                parseInt(firstRow.Estudiantes || firstRow.estudiantes || '30')));
+                section.type, parentSectionId, parseInt(firstRow.Horas || firstRow.horas || '2') || 2,
+                expectedStudents));
     }
     try {
         if (import_mode === 'replace') {

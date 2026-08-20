@@ -583,7 +583,7 @@ const FileUploadPage: React.FC = () => {
                     <div className="mb-3">
                       <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1">Columnas opcionales:</p>
                       <div className="flex flex-wrap gap-1">
-                        {dataType === 'horarios' && ['tipo', 'docente', 'nrc_teorico', 'sala_preferida', 'seccion'].map(col => (
+                        {dataType === 'horarios' && ['seccion', 'estudiantes', 'tipo', 'docente', 'nrc_teorico', 'sala_preferida'].map(col => (
                           <span key={col} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-medium rounded">{col}</span>
                         ))}
                         {dataType === 'docentes' && ['departamento', 'tipo_contrato', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes'].map(col => (
@@ -602,9 +602,10 @@ const FileUploadPage: React.FC = () => {
                     <div className="bg-white dark:bg-slate-800 rounded-lg p-2 mb-3 overflow-x-auto">
                       <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Ejemplo:</p>
                       <code className="text-[10px] text-slate-700 dark:text-slate-300 whitespace-pre font-mono">
-                        {dataType === 'horarios' && `nrc,codigo,nombre,nivel,horas,tipo,docente,nrc_teorico
-10001,DMOR0030,Morfología TEO,3,2,TEO,Prof. Reyes,
-10002,DMOR0030,Morfología LAB,3,2,LAB,Prof. Reyes,10001`}
+                        {dataType === 'horarios' && `nrc,codigo,nombre,nivel,horas,tipo,seccion,estudiantes,docente,nrc_teorico,sala_preferida
+10001,DMOR0030,Morfología Teoría,3,2,TEO,1,60,Prof. José Reyes,,
+10002,DMOR0030,Morfología Lab Sec 1,3,2,LAB,1,20,Prof. José Reyes,10001,LAB 1
+10003,DMOR0030,Morfología Lab Sec 2,3,2,LAB,2,20,Ayud. Felipe Pérez,10001,LAB 2`}
                         {dataType === 'docentes' && `nombre,email,max_horas,lunes,martes,miercoles,jueves,viernes
 Prof. José Reyes,jose.reyes@universidad.cl,20,"M1,M2,M3,M4","M1,M2,M3","M1,M2,M3,M4","M1,M2","M1,M2"
 Dra. María Rivas,maria.rivas@universidad.cl,16,"M1,M2","M1,M2,M3,M4","M1,M2","M1,M2,M3,M4",`}
@@ -621,10 +622,11 @@ LAB 1,LAB,20,Edificio D,"DMOR0030,DFIS0032"`}
                     <button
                       onClick={() => {
                         const examples: Record<string, string> = {
-                          horarios: `nrc,codigo,nombre,nivel,horas,tipo,docente,nrc_teorico,sala_preferida,seccion
-10001,DMOR0030,Morfología TEO,3,2,TEO,Prof. José Reyes,,,
-10002,DMOR0030,Morfología LAB Sec1,3,2,LAB,Prof. José Reyes,10001,LAB 1,1
-10003,DMOR0030,Morfología LAB Sec2,3,2,LAB,Ayud. Felipe Pérez,10001,LAB 2,2`,
+                          horarios: `nrc,codigo,nombre,nivel,horas,tipo,seccion,estudiantes,docente,nrc_teorico,sala_preferida
+10001,DMOR0030,Morfología Teoría,3,2,TEO,1,60,Prof. José Reyes,,
+10002,DMOR0030,Morfología Lab Sec 1,3,2,LAB,1,20,Prof. José Reyes,10001,LAB 1
+10003,DMOR0030,Morfología Lab Sec 2,3,2,LAB,2,20,Ayud. Felipe Pérez,10001,LAB 2
+10004,DMOR0030,Morfología Lab Sec 3,3,2,LAB,3,20,Dra. María Rivas,10001,LAB 1`,
                           docentes: `nombre,email,max_horas,departamento,tipo_contrato,lunes,martes,miercoles,jueves,viernes
 Prof. José Reyes,jose.reyes@universidad.cl,20,Mi Carrera,Planta,"M1,M2,M3,M4","M1,M2,M3","M1,M2,M3,M4","M1,M2","M1,M2"
 Dra. María Rivas,maria.rivas@universidad.cl,16,Mi Carrera,Planta,"M1,M2","M1,M2,M3,M4","M1,M2","M1,M2,M3,M4",
