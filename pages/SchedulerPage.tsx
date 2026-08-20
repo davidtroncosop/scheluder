@@ -535,6 +535,7 @@ const SchedulerPage: React.FC = () => {
             timeslot_id: best.timeslot_id,
             day_of_week: best.day_of_week,
             period_id: selectedPeriod,
+            parallel_index: (best as any).parallel_index ?? 0,
           });
           completed++;
         }

@@ -340,6 +340,15 @@ scheduleRoutes.get('/schedule/score', authMiddleware, async (c) => {
     const availability = section.teacher_id
         ? await db.prepare(`SELECT timeslot_id, day_of_week, status FROM teacher_availability WHERE teacher_id = ?`).bind(section.teacher_id).all()
         : { results: [] } as any;
+    const roomCompatibilities = section.subject_id
+        ? await db.prepare(`
+            SELECT src.room_id, src.requirement_level, r.type as room_type
+            FROM subject_room_compatibilities src
+            JOIN rooms r ON r.id = src.room_id
+            WHERE src.subject_id = ?
+        `).bind(section.subject_id).all()
+        : { results: [] } as any;
+
     const rows = assignments.results as any[];
     const targetRelationship: SectionRelationshipIdentity = { id: section.id, parent_section_id: section.parent_section_id };
     const roomBusy = new Set(rows.map(row => `${row.room_id}:${row.timeslot_id}:${row.day_of_week}`));
@@ -347,18 +356,23 @@ scheduleRoutes.get('/schedule/score', authMiddleware, async (c) => {
     const parentChildBusy = new Set(rows
         .filter(row => areDirectParentAndChild(targetRelationship, { id: row.section_id, parent_section_id: row.parent_section_id }))
         .map(row => `${row.timeslot_id}:${row.day_of_week}`));
-    const levelCounts = new Map<string, number>();
+
+    const levelAssignmentsBySlot = new Map<string, any[]>();
     rows.filter(row => (
         row.level === section.level &&
         row.career_id === section.career_id &&
         shouldApplyLevelClash(targetRelationship, { id: row.section_id, parent_section_id: row.parent_section_id })
     )).forEach(row => {
         const key = `${row.timeslot_id}:${row.day_of_week}`;
-        levelCounts.set(key, (levelCounts.get(key) || 0) + 1);
+        const existing = levelAssignmentsBySlot.get(key) || [];
+        existing.push(row);
+        levelAssignmentsBySlot.set(key, existing);
     });
+
     const blocked = new Set((availability.results as any[]).filter(row => row.status === 'blocked').map(row => `${row.timeslot_id}:${row.day_of_week}`));
     const preferred = new Set((availability.results as any[]).filter(row => row.status === 'preference').map(row => `${row.timeslot_id}:${row.day_of_week}`));
     const orderById = new Map((timeslots.results as any[]).map(row => [row.id, row.order_index]));
+
     const isTypeCompatible = (secType?: string, rmType?: string) => {
         const s = (secType || 'TEO').toUpperCase();
         const r = (rmType || 'TEO').toUpperCase();
@@ -368,29 +382,99 @@ scheduleRoutes.get('/schedule/score', authMiddleware, async (c) => {
         return r === 'TEO' || r === 'AUD';
     };
 
+    const relevantReqs = (roomCompatibilities.results as any[]).filter(r => isTypeCompatible(section.type, r.room_type));
+    const exclusiveRoomIds = relevantReqs.filter(r => r.requirement_level === 'EXCLUSIVE').map(r => r.room_id);
+    const preferredRoomIds = new Set(relevantReqs.filter(r => r.requirement_level === 'PREFERRED').map(r => r.room_id));
+
     const scores: any[] = [];
 
     for (const ts of timeslots.results as any[]) {
         for (let day = 1; day <= 5; day++) {
             const slotKey = `${ts.id}:${day}`;
+            const levelRows = levelAssignmentsBySlot.get(slotKey) || [];
+
+            // Hard constraint: Maximum 3 parallel sections per level in a single timeslot
+            if (levelRows.length >= 3) continue;
+
+            // Determine next free parallel track index (0, 1, or 2)
+            const occupiedIndices = levelRows.map(r => r.parallel_index ?? 0);
+            let nextParallelIndex = 0;
+            while (occupiedIndices.includes(nextParallelIndex) && nextParallelIndex < 3) {
+                nextParallelIndex++;
+            }
+            if (nextParallelIndex >= 3) continue;
+
             for (const room of rooms.results as any[]) {
                 // Strict Hard Constraints - Skip any invalid or conflicting slot
                 if (roomBusy.has(`${room.id}:${slotKey}`)) continue;
                 if (teacherBusy.has(slotKey) || blocked.has(slotKey)) continue;
                 if (parentChildBusy.has(slotKey)) continue;
-                if ((levelCounts.get(slotKey) || 0) >= 3) continue; // Allow up to 3 parallel sections per level
-                if (room.capacity < section.expected_students) continue;
+                if (section.expected_students && room.capacity < section.expected_students) continue;
                 if (!isTypeCompatible(section.type, room.type)) continue;
+                if (exclusiveRoomIds.length > 0 && !exclusiveRoomIds.includes(room.id)) continue;
 
                 let score = 100;
                 const breakdown: Array<{ rule: string; points: number }> = [];
-                if (section.type === room.type) { score += 30; breakdown.push({ rule: 'Tipo de sala coincide', points: 30 }); }
-                if (preferred.has(slotKey)) { score += 20; breakdown.push({ rule: 'Preferencia del docente', points: 20 }); }
-                const adjacent = rows.some(row => row.level === section.level && row.career_id === section.career_id && row.day_of_week === day && Math.abs((orderById.get(row.timeslot_id) as number) - ts.order_index) === 1);
-                if (adjacent) { score += 20; breakdown.push({ rule: 'Horario contiguo con mismo nivel', points: 20 }); }
-                if (room.capacity > section.expected_students * 2) { score -= 10; breakdown.push({ rule: 'Sala demasiado grande', points: -10 }); }
-                if (day === 5 && ts.order_index >= 6) { score -= 15; breakdown.push({ rule: 'Viernes último módulo', points: -15 }); }
-                scores.push({ timeslot_id: ts.id, timeslot_label: ts.label, day_of_week: day, room_id: room.id, room_name: room.name, score: Math.max(1, Math.min(100, score)), breakdown, blocked: false });
+
+                // 1. Room Type match
+                if (section.type === room.type) {
+                    score += 30;
+                    breakdown.push({ rule: 'Tipo de sala exacto', points: 30 });
+                }
+
+                // 2. Preferred Room designated for this subject
+                if (preferredRoomIds.has(room.id)) {
+                    score += 25;
+                    breakdown.push({ rule: 'Sala preferente para la asignatura', points: 25 });
+                }
+
+                // 3. Teacher Preference
+                if (preferred.has(slotKey)) {
+                    score += 20;
+                    breakdown.push({ rule: 'Preferencia horaria del docente', points: 20 });
+                }
+
+                // 4. Consecutive/Adjacent class with same level (reduces empty gaps)
+                const adjacent = rows.some(row =>
+                    row.level === section.level &&
+                    row.career_id === section.career_id &&
+                    row.day_of_week === day &&
+                    Math.abs((orderById.get(row.timeslot_id) as number) - ts.order_index) === 1
+                );
+                if (adjacent) {
+                    score += 20;
+                    breakdown.push({ rule: 'Horario contiguo con mismo nivel', points: 20 });
+                }
+
+                // 5. Optimal Capacity fit bonus / penalty
+                if (section.expected_students > 0) {
+                    const ratio = room.capacity / section.expected_students;
+                    if (ratio >= 1.0 && ratio <= 1.35) {
+                        score += 15;
+                        breakdown.push({ rule: 'Aforo óptimo y eficiente', points: 15 });
+                    } else if (ratio > 2.5) {
+                        score -= 15;
+                        breakdown.push({ rule: 'Sala sobredimensionada', points: -15 });
+                    }
+                }
+
+                // 6. Friday late afternoon penalty
+                if (day === 5 && ts.order_index >= 6) {
+                    score -= 15;
+                    breakdown.push({ rule: 'Viernes último módulo', points: -15 });
+                }
+
+                scores.push({
+                    timeslot_id: ts.id,
+                    timeslot_label: ts.label,
+                    day_of_week: day,
+                    room_id: room.id,
+                    room_name: room.name,
+                    parallel_index: nextParallelIndex,
+                    score: Math.max(1, Math.min(100, score)),
+                    breakdown,
+                    blocked: false,
+                });
             }
         }
     }
