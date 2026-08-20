@@ -862,7 +862,7 @@ const SchedulerPage: React.FC = () => {
 
         <RoomSelectorModal
           selectorData={roomSelectorData}
-          compatibleRooms={roomSelectorData ? getCompatibleRoomsForType(roomSelectorData.section.type || 'TEO') : []}
+          compatibleRooms={roomSelectorData ? getCompatibleRoomsForType(roomSelectorData.section.type || 'TEO', roomSelectorData.section.expected_students || 0) : []}
           onClose={() => setRoomSelectorData(null)}
           onSelectRoom={handleConfirmRoomAssignment}
         />

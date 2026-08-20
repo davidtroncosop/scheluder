@@ -304,22 +304,30 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
               const isCompleted = assigned >= required;
               const isActive = activeSectionId === section.id;
 
-              // Filter compatible rooms
+              // Filter compatible rooms strictly by capacity and certified type
               const secType = (section.type || 'TEO').toUpperCase();
+              const expectedStudents = Number(section.expected_students || 0);
               const compatibleRooms = availableRooms.filter(r => {
+                if (expectedStudents > 0 && r.capacity < expectedStudents) return false;
+                if (secType === 'SIM') return r.type === 'SIM';
                 if (secType === 'LAB') return r.type === 'LAB' || r.type === 'SIM';
-                if (secType === 'SIM') return r.type === 'SIM' || r.type === 'LAB';
                 if (secType === 'TAL') return r.type === 'TAL';
                 return r.type === 'TEO' || r.type === 'AUD';
               });
 
+              const hasNoCompatibleRoom = compatibleRooms.length === 0 && expectedStudents > 0;
+
               return (
                 <div
                   key={section.id}
-                  draggable={!isCompleted}
+                  draggable={!isCompleted && !hasNoCompatibleRoom}
                   onDragStart={(e) => onDragStart(e, section)}
                   onDragEnd={onDragEnd}
-                  className={`p-3 rounded-xl border transition-all cursor-grab active:cursor-grabbing hover:shadow-md flex flex-col gap-2.5 ${
+                  className={`p-3 rounded-xl border transition-all ${
+                    hasNoCompatibleRoom
+                      ? 'border-rose-300 dark:border-rose-800/80 bg-rose-50/40 dark:bg-rose-950/20'
+                      : 'cursor-grab active:cursor-grabbing hover:shadow-md'
+                  } flex flex-col gap-2.5 ${
                     isActive
                       ? 'bg-primary/5 dark:bg-primary/10 border-primary ring-2 ring-primary/40 shadow-md'
                       : isCompleted
@@ -343,6 +351,11 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                       }`}>
                         {section.type}
                       </span>
+                      {expectedStudents > 0 && (
+                        <span className="text-[10px] font-mono text-slate-500 font-semibold">
+                          ({expectedStudents} cupos)
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1">
@@ -365,6 +378,14 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                   <p className="text-xs font-bold text-slate-900 dark:text-white leading-tight">
                     {section.subject_name || section.subject_code}
                   </p>
+
+                  {/* Insufficient Infrastructure Warning Tag */}
+                  {hasNoCompatibleRoom && (
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-900/40 p-1.5 rounded-lg border border-rose-300 dark:border-rose-800">
+                      <span className="material-symbols-outlined text-sm shrink-0 text-rose-600">warning</span>
+                      <span>Sin salas {secType} con aforo ≥ {expectedStudents}</span>
+                    </div>
+                  )}
 
                   {/* Pre-configuration Selectors: Docente & Sala */}
                   <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60">
@@ -391,10 +412,11 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                       </select>
                     </div>
 
-                    {/* Sala Selector */}
+                    {/* Sala Selector - Only showing rooms that can fit expected students */}
                     <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700/70">
                       <span className="material-symbols-outlined text-xs text-amber-500 shrink-0">meeting_room</span>
                       <select
+                        disabled={hasNoCompatibleRoom}
                         value={section.room_id || section.preferred_room_id || ''}
                         onChange={(e) => {
                           e.stopPropagation();
@@ -403,14 +425,20 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                           onUpdateSectionRoom?.(section.id, val, selRoom?.name || '');
                         }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full text-[11px] font-medium bg-transparent border-0 p-0 text-slate-800 dark:text-slate-200 focus:ring-0 cursor-pointer truncate"
+                        className="w-full text-[11px] font-medium bg-transparent border-0 p-0 text-slate-800 dark:text-slate-200 focus:ring-0 cursor-pointer truncate disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <option value="">-- Cualquier sala compatible ({secType}) --</option>
-                        {compatibleRooms.map(r => (
-                          <option key={r.id} value={r.id} className="text-slate-900 dark:text-slate-100">
-                            {r.name} ({r.type} · Cap. {r.capacity})
-                          </option>
-                        ))}
+                        {hasNoCompatibleRoom ? (
+                          <option value="">-- Sin salas con aforo ≥ {expectedStudents} cupos --</option>
+                        ) : (
+                          <>
+                            <option value="">-- Cualquier sala compatible ({secType} · ≥{expectedStudents} cupos) --</option>
+                            {compatibleRooms.map(r => (
+                              <option key={r.id} value={r.id} className="text-slate-900 dark:text-slate-100">
+                                {r.name} ({r.type} · Cap. {r.capacity})
+                              </option>
+                            ))}
+                          </>
+                        )}
                       </select>
                     </div>
                   </div>
