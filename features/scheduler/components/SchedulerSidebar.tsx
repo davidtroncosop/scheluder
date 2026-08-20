@@ -36,8 +36,8 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'secciones' | 'docentes'>('secciones');
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'all' | 'completed'>('pending');
   const [selectedLevelFilter, setSelectedLevelFilter] = useState<number | null>(null);
-  const [filterPendingOnly, setFilterPendingOnly] = useState(false);
 
   // Available levels from sections
   const availableLevels = useMemo(() => {
@@ -85,6 +85,9 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
     );
   }
 
+  const pendingCount = useMemo(() => sections.filter(s => (s.assigned_slots || 0) < Number(s.hours_per_week || 0)).length, [sections]);
+  const completedCount = sections.length - pendingCount;
+
   // Filter sections
   const filteredSections = sections.filter(section => {
     const matchesSearch = 
@@ -94,9 +97,13 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
       (section.teacher_name || '').toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesLevel = selectedLevelFilter === null || Number(section.level) === selectedLevelFilter;
-    const isPending = (section.assigned_slots || 0) < Number(section.hours_per_week || 0);
+    const isCompleted = (section.assigned_slots || 0) >= Number(section.hours_per_week || 0);
 
-    return matchesSearch && matchesLevel && (!filterPendingOnly || isPending);
+    let matchesStatus = true;
+    if (statusFilter === 'pending') matchesStatus = !isCompleted;
+    if (statusFilter === 'completed') matchesStatus = isCompleted;
+
+    return matchesSearch && matchesLevel && matchesStatus;
   });
 
   // Filter teachers
@@ -139,7 +146,7 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
             }`}
           >
-            Secciones ({sections.length})
+            Backlog ({pendingCount})
           </button>
           <button
             type="button"
@@ -187,18 +194,50 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
           />
         </div>
 
+        {/* Status Sub-Tabs: Todas, Pendientes, Completadas */}
+        {activeTab === 'secciones' && (
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-[11px] font-bold">
+            <button
+              type="button"
+              onClick={() => setStatusFilter('pending')}
+              className={`flex-1 py-1 text-center rounded-md transition-all ${
+                statusFilter === 'pending'
+                  ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Pendientes ({pendingCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('completed')}
+              className={`flex-1 py-1 text-center rounded-md transition-all ${
+                statusFilter === 'completed'
+                  ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Listas ({completedCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className={`flex-1 py-1 text-center rounded-md transition-all ${
+                statusFilter === 'all'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Todas ({sections.length})
+            </button>
+          </div>
+        )}
+
         {/* Level Filters for Sections */}
         {activeTab === 'secciones' && (
           <div>
             <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-              <span>Filtrar Nivel</span>
-              <button
-                type="button"
-                onClick={() => setFilterPendingOnly(!filterPendingOnly)}
-                className={`text-[10px] lowercase font-semibold transition-colors ${filterPendingOnly ? 'text-primary font-bold' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                {filterPendingOnly ? 'solo pendientes ✓' : 'ver todas'}
-              </button>
+              <span>Nivel Académico</span>
             </div>
             <div className="flex items-center gap-1 overflow-x-auto custom-scrollbar pb-1">
               <button
@@ -235,9 +274,28 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
       <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
         {activeTab === 'secciones' ? (
           filteredSections.length === 0 ? (
-            <div className="text-center py-10 text-slate-400">
-              <span className="material-symbols-outlined text-3xl mb-1 text-slate-300">event_busy</span>
-              <p className="text-xs">No hay secciones que coincidan</p>
+            <div className="text-center py-12 px-4 text-slate-400 flex flex-col items-center">
+              {statusFilter === 'pending' ? (
+                <>
+                  <span className="material-symbols-outlined text-4xl mb-2 text-emerald-500">task_alt</span>
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">¡Backlog vacío!</p>
+                  <p className="text-[11px] text-slate-500 mt-1 max-w-[200px] leading-relaxed">
+                    Todas las secciones requeridas ya están asignadas en la matriz.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('all')}
+                    className="mt-3 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors"
+                  >
+                    Ver todas ({sections.length})
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-3xl mb-1 text-slate-300">event_busy</span>
+                  <p className="text-xs">No hay secciones que coincidan</p>
+                </>
+              )}
             </div>
           ) : (
             filteredSections.map(section => {
