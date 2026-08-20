@@ -51,7 +51,9 @@ class SchedulerAPI {
                 this.token = null;
                 session.clear();
             }
-            throw new Error(error.error || `Error ${response.status}`);
+            const detail = error.conflicts?.map((c: any) => c.description).join('. ');
+            const message = detail ? `${error.error || 'Conflicto'}: ${detail}` : (error.error || `Error ${response.status}`);
+            throw new Error(message);
         }
 
         return response.json();

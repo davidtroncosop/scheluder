@@ -252,6 +252,7 @@ const SchedulerPage: React.FC = () => {
           parent_nrc: s.parent_nrc || null,
           parent_subject_name: s.parent_subject_name || null,
           hours_per_week: Number(s.hours_per_week || s.horas || 2),
+          expected_students: Number(s.expected_students || s.cupo || 0),
           assigned_slots: Number(s.assigned_slots || 0),
           priority: Number(s.priority || 0),
           teacher_name: s.teacher_name || s.profesor || null,
@@ -271,6 +272,7 @@ const SchedulerPage: React.FC = () => {
           parent_section_id: s.nrc_teorico || s.parent_section_id || null,
           parent_nrc: s.parent_nrc || null,
           hours_per_week: Number(s.horas || s.hours_per_week || 2),
+          expected_students: Number(s.cupo || s.expected_students || 0),
           assigned_slots: Number(s.assigned_slots || 0),
           priority: 0,
           teacher_name: s.profesor || s.teacher_name || null,
@@ -312,24 +314,21 @@ const SchedulerPage: React.FC = () => {
     setDropTarget(null);
   };
 
-  const getCompatibleRoomsForType = (sectionType: string) => {
+  const getCompatibleRoomsForType = (sectionType: string, minCapacity = 0) => {
     const type = (sectionType || '').toUpperCase();
-    if (type === 'SIM') return availableRooms.filter(r => r.type === 'SIM' || r.type === 'LAB');
-    if (type === 'LAB') return availableRooms.filter(r => r.type === 'LAB' || r.type === 'SIM');
-    if (type === 'TAL') return availableRooms.filter(r => r.type === 'TAL');
-    return availableRooms.filter(r => r.type === 'TEO' || r.type === 'AUD');
-  };
-
-  const findFreeCompatibleRoom = (sectionType?: string, dayOfWeek?: number, timeslotId?: string) => {
-    const secType = (sectionType || 'TEO').toUpperCase();
-    const compatRooms = availableRooms.filter(r => {
-      if (secType === 'LAB') return r.type === 'LAB' || r.type === 'SIM';
-      if (secType === 'SIM') return r.type === 'SIM' || r.type === 'LAB';
-      if (secType === 'TAL') return r.type === 'TAL';
+    return availableRooms.filter(r => {
+      if (minCapacity > 0 && r.capacity < minCapacity) return false;
+      if (type === 'SIM') return r.type === 'SIM';
+      if (type === 'LAB') return r.type === 'LAB' || r.type === 'SIM';
+      if (type === 'TAL') return r.type === 'TAL';
       return r.type === 'TEO' || r.type === 'AUD';
     });
+  };
 
-    if (!dayOfWeek || !timeslotId) return compatRooms[0] || availableRooms[0];
+  const findFreeCompatibleRoom = (sectionType?: string, dayOfWeek?: number, timeslotId?: string, minCapacity = 0) => {
+    const compatRooms = getCompatibleRoomsForType(sectionType || 'TEO', minCapacity);
+
+    if (!dayOfWeek || !timeslotId) return compatRooms[0] || null;
 
     const occupiedRoomIds = assignments
       .filter(a => a.day_of_week === dayOfWeek && a.timeslot_id === timeslotId)
@@ -339,7 +338,7 @@ const SchedulerPage: React.FC = () => {
       r => !occupiedRoomIds.includes(r.id.toUpperCase()) && !occupiedRoomIds.includes(r.name.toUpperCase())
     );
 
-    return freeRooms[0] || compatRooms[0] || availableRooms[0];
+    return freeRooms[0] || null;
   };
 
   // Handler for updating teacher of a section
@@ -412,7 +411,9 @@ const SchedulerPage: React.FC = () => {
       }
       addAuditEntry('assign', `Asignado NRC ${section.nrc} a día ${dayOfWeek}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al asignar la sección');
+      const msg = err instanceof Error ? err.message : 'Error al asignar la sección';
+      setError(msg);
+      setNotice({ type: 'error', message: msg });
     } finally {
       setSaving(false);
       setRoomSelectorData(null);
@@ -427,7 +428,12 @@ const SchedulerPage: React.FC = () => {
     if (chosenRoomId) {
       await executeAssignment(activeSchedulingSection, chosenRoomId, timeslotId, dayOfWeek);
     } else {
-      const freeRoom = findFreeCompatibleRoom(activeSchedulingSection.type, dayOfWeek, timeslotId);
+      const freeRoom = findFreeCompatibleRoom(
+        activeSchedulingSection.type,
+        dayOfWeek,
+        timeslotId,
+        activeSchedulingSection.expected_students || 0
+      );
       if (freeRoom) {
         await executeAssignment(activeSchedulingSection, freeRoom.id, timeslotId, dayOfWeek);
       } else {
@@ -461,7 +467,12 @@ const SchedulerPage: React.FC = () => {
     if (chosenRoomId) {
       await executeAssignment(sectionToAssign, chosenRoomId, timeslotId, dayOfWeek);
     } else {
-      const freeRoom = findFreeCompatibleRoom(sectionToAssign.type, dayOfWeek, timeslotId);
+      const freeRoom = findFreeCompatibleRoom(
+        sectionToAssign.type,
+        dayOfWeek,
+        timeslotId,
+        sectionToAssign.expected_students || 0
+      );
       if (freeRoom) {
         await executeAssignment(sectionToAssign, freeRoom.id, timeslotId, dayOfWeek);
       } else {

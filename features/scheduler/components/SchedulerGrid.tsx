@@ -185,6 +185,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
 
     let specificRoomConflict: string | null = null;
     let specificRoomFree = false;
+    const expectedStudents = Number(targetSection.expected_students || 0);
 
     if (targetedRoomId || targetedRoomName) {
       const roomMatch = availableRooms.find(
@@ -199,7 +200,9 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
              (a.room_name && a.room_name.toUpperCase() === rName)
       );
 
-      if (isRoomOccupied) {
+      if (roomMatch && expectedStudents > 0 && roomMatch.capacity < expectedStudents) {
+        specificRoomConflict = `Aforo insuficiente: ${roomMatch.name} (cap. ${roomMatch.capacity}) no alcanza para ${expectedStudents} alumnos`;
+      } else if (isRoomOccupied) {
         specificRoomConflict = `Sala ${roomMatch?.name || targetedRoomName} ocupada por ${isRoomOccupied.subject_name || 'NRC ' + isRoomOccupied.nrc}`;
       } else {
         specificRoomFree = true;
@@ -207,8 +210,9 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
     }
 
     const compatRooms = availableRooms.filter(r => {
+      if (expectedStudents > 0 && r.capacity < expectedStudents) return false;
+      if (sectionType === 'SIM') return r.type === 'SIM';
       if (sectionType === 'LAB') return r.type === 'LAB' || r.type === 'SIM';
-      if (sectionType === 'SIM') return r.type === 'SIM' || r.type === 'LAB';
       if (sectionType === 'TAL') return r.type === 'TAL';
       return r.type === 'TEO' || r.type === 'AUD';
     });
@@ -241,12 +245,23 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
       };
     }
 
-    // Critical: Chosen specific room is occupied
+    // Critical: Chosen specific room is occupied or overcapacity
     if (specificRoomConflict) {
       return {
         type: 'CRITICAL' as const,
         label: specificRoomConflict,
-        tag: 'Sala Ocupada',
+        tag: specificRoomConflict.includes('Aforo') ? 'Aforo Insuficiente' : 'Sala Ocupada',
+        bg: 'bg-rose-500/15 border-rose-400 text-rose-800 dark:text-rose-300 dark:bg-rose-950/40',
+        dot: 'bg-rose-500',
+      };
+    }
+
+    // Critical: No rooms exist with sufficient capacity for this section type
+    if (compatRooms.length === 0) {
+      return {
+        type: 'CRITICAL' as const,
+        label: `Sin salas ${sectionType} con aforo suficiente (${expectedStudents} alumnos)`,
+        tag: 'Aforo Insuficiente',
         bg: 'bg-rose-500/15 border-rose-400 text-rose-800 dark:text-rose-300 dark:bg-rose-950/40',
         dot: 'bg-rose-500',
       };

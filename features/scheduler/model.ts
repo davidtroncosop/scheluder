@@ -15,6 +15,7 @@ export interface SchedulerSection {
   room_id?: string | null;
   room_name?: string | null;
   preferred_room_id?: string | null;
+  expected_students?: number;
   priority: number;
   assigned_slots: number;
 }
