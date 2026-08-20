@@ -65,39 +65,39 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
   const displayLevels = availableLevels.length > 0 ? availableLevels : [1, 2, 3, 4, 5, 6];
 
   return (
-    <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3.5 sm:py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 sticky top-0 z-30 shadow-xs">
+    <header className="bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/5 px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 sticky top-0 z-30 shadow-xs transition-colors">
       <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
         {/* Period Selector */}
-        <div className="flex items-center gap-1.5">
-          <span className="material-symbols-outlined text-slate-400 text-base">calendar_today</span>
+        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1 rounded-xl border border-slate-200/60 dark:border-slate-700/50">
+          <span className="material-symbols-outlined text-primary text-[17px]">calendar_month</span>
           <select
             value={selectedPeriod}
             onChange={(e) => onSelectPeriod(e.target.value)}
-            className="text-xs sm:text-sm font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-2.5 py-1.5 border-0 focus:ring-2 focus:ring-primary cursor-pointer"
+            className="text-xs font-bold bg-transparent text-slate-800 dark:text-slate-200 border-0 p-0 pr-4 focus:ring-0 cursor-pointer"
           >
             {periods.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.id} className="bg-white dark:bg-slate-800">{p.name}</option>
             ))}
           </select>
         </div>
 
         {/* Status Badge */}
-        <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${status.color}`}>
-          <span className="material-symbols-outlined text-sm">{status.icon}</span>
+        <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black uppercase tracking-wider ${status.color} shadow-xs`}>
+          <span className="material-symbols-outlined text-[15px]">{status.icon}</span>
           <span>{status.label}</span>
         </div>
 
         <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5 hidden sm:block" />
 
         {/* View Mode Switcher */}
-        <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+        <div className="flex items-center bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/50">
           <button
             type="button"
             onClick={() => onChangeViewMode('nivel')}
-            className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+            className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
               viewMode === 'nivel'
                 ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Por Nivel
@@ -105,10 +105,10 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
           <button
             type="button"
             onClick={() => onChangeViewMode('sala')}
-            className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+            className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
               viewMode === 'sala'
                 ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Por Sala
@@ -116,10 +116,10 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
           <button
             type="button"
             onClick={() => onChangeViewMode('docente')}
-            className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+            className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
               viewMode === 'docente'
                 ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Por Docente
@@ -132,10 +132,10 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
             <button
               type="button"
               onClick={() => onChangeViewLevel(0)}
-              className={`px-2 h-7 shrink-0 rounded-md text-xs font-black uppercase tracking-wider transition-all ${
+              className={`px-2.5 h-7 shrink-0 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
                 selectedViewLevel === 0
                   ? 'bg-primary text-white shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
               title="Ver asignaciones de todos los niveles en simultáneo"
             >
@@ -146,10 +146,10 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
                 key={lvl}
                 type="button"
                 onClick={() => onChangeViewLevel(lvl)}
-                className={`size-7 shrink-0 rounded-md text-xs font-black transition-all ${
+                className={`size-7 shrink-0 rounded-lg text-xs font-black transition-all ${
                   selectedViewLevel === lvl
                     ? 'bg-primary text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
                 title={`Ver asignaciones de Nivel ${lvl}`}
               >
@@ -162,10 +162,10 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
               <button
                 type="button"
                 onClick={() => onAddSectionForLevel(selectedViewLevel)}
-                className="flex items-center gap-1 px-2.5 h-7 shrink-0 rounded-md text-xs font-bold bg-primary/10 text-primary hover:bg-primary hover:text-white border border-primary/30 transition-all shadow-xs ml-1"
+                className="flex items-center gap-1 px-2.5 h-7 shrink-0 rounded-lg text-xs font-bold bg-primary/10 text-primary hover:bg-primary hover:text-white border border-primary/30 transition-all shadow-xs ml-1"
                 title={`Agregar una nueva sección o paralelo al Nivel ${selectedViewLevel}`}
               >
-                <span className="material-symbols-outlined text-sm">add_circle</span>
+                <span className="material-symbols-outlined text-[15px]">add_circle</span>
                 <span>+ Sección N{selectedViewLevel}</span>
               </button>
             )}
@@ -176,7 +176,7 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
           <select
             value={selectedViewRoom}
             onChange={(e) => onChangeViewRoom(e.target.value)}
-            className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-md px-2 py-1.5 border-0 focus:ring-2 focus:ring-primary font-bold"
+            className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-1.5 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary font-bold cursor-pointer"
           >
             <option value="TODAS">Todas las salas</option>
             {availableRooms.map(r => (
@@ -189,7 +189,7 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
           <select
             value={selectedViewTeacher || ''}
             onChange={(e) => onChangeViewTeacher(e.target.value)}
-            className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-md px-2 py-1.5 border-0 focus:ring-2 focus:ring-primary font-bold"
+            className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-1.5 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary font-bold cursor-pointer"
           >
             <option value="">Todos los docentes</option>
             {availableTeachers.map(t => (
@@ -200,14 +200,14 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <button
           type="button"
           onClick={onAutoAssign}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-primary to-indigo-600 hover:from-primary-dark hover:to-indigo-700 rounded-xl shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 active:scale-95 transition-all"
           title="Generar propuesta automática con optimizador"
         >
-          <span className="material-symbols-outlined text-sm">auto_awesome</span>
+          <span className="material-symbols-outlined text-[16px] text-amber-300">auto_awesome</span>
           <span>Autollenar</span>
         </button>
 
@@ -215,10 +215,10 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
           type="button"
           onClick={onSaveDraft}
           disabled={saving || !hasChanges}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/80 rounded-xl shadow-xs transition-all disabled:opacity-50 active:scale-95"
           title="Guardar estado actual del borrador"
         >
-          <span className="material-symbols-outlined text-sm">save</span>
+          <span className="material-symbols-outlined text-[16px] text-slate-400">save</span>
           <span>{saving ? 'Guardando...' : 'Guardar'}</span>
         </button>
 
@@ -226,10 +226,10 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
           type="button"
           onClick={onPublish}
           disabled={!canPublish}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-xs disabled:opacity-50 disabled:bg-slate-400"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md shadow-emerald-600/20 hover:shadow-emerald-600/30 transition-all disabled:opacity-50 disabled:bg-slate-400 active:scale-95"
           title={canPublish ? 'Publicar horario oficial' : 'Resuelve los conflictos críticos antes de publicar'}
         >
-          <span className="material-symbols-outlined text-sm">publish</span>
+          <span className="material-symbols-outlined text-[16px]">verified</span>
           <span>Publicar</span>
         </button>
 
@@ -238,19 +238,19 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
         <button
           type="button"
           onClick={onOpenExport}
-          className="p-1.5 text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+          className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all"
           title="Exportar horario (PDF / Excel / iCal)"
         >
-          <span className="material-symbols-outlined text-lg">download</span>
+          <span className="material-symbols-outlined text-[19px]">download</span>
         </button>
 
         <button
           type="button"
           onClick={onOpenAudit}
-          className="p-1.5 text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+          className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all"
           title="Historial de cambios y auditoría"
         >
-          <span className="material-symbols-outlined text-lg">history</span>
+          <span className="material-symbols-outlined text-[19px]">history</span>
         </button>
       </div>
     </header>

@@ -30,19 +30,21 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
     }, [selectedPeriod]); // reload when period changes to sync changes made elsewhere
 
     return (
-        <div className={`flex items-center gap-2 ${className}`}>
-            <span className="material-symbols-outlined text-slate-400 text-[18px]">event</span>
-            <select
-                value={selectedPeriod}
-                onChange={(e) => onPeriodChange(e.target.value)}
-                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/50"
-            >
-                {periodsList.map(p => (
-                    <option key={p.id} value={p.id}>
-                        {p.name} ({p.status})
-                    </option>
-                ))}
-            </select>
+        <div className={`relative flex items-center ${className}`}>
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/90 px-3 py-1.5 shadow-xs backdrop-blur-md transition-all hover:border-slate-300 dark:border-slate-700/60 dark:bg-slate-800/90 dark:hover:border-slate-600">
+                <span className="material-symbols-outlined text-primary text-[18px]">calendar_month</span>
+                <select
+                    value={selectedPeriod}
+                    onChange={(e) => onPeriodChange(e.target.value)}
+                    className="border-none bg-transparent p-0 pr-6 text-xs font-bold text-slate-800 focus:ring-0 dark:text-slate-100 cursor-pointer"
+                >
+                    {periodsList.map(p => (
+                        <option key={p.id} value={p.id} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+                            {p.name} {p.status === 'Activo' ? '🟢' : '⚪'}
+                        </option>
+                    ))}
+                </select>
+            </div>
         </div>
     );
 };

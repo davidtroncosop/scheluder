@@ -3,7 +3,7 @@ import { MainLayout } from '../components/MainLayout';
 import { useAcademicPeriods } from '../lib/academicPeriods';
 import { session } from '../lib/session';
 import api from '../services/api';
-import { generateICalendar, generateScheduleCsv, downloadFile } from '../features/scheduler/export';
+import { generateICalendar, generateScheduleCsv, generateSchedulePdf, downloadFile } from '../features/scheduler/export';
 import type { AssignmentWithDetails, Career, Room, Teacher, Timeslot } from '../types';
 
 type ViewMode = 'level' | 'teacher' | 'room';
@@ -146,8 +146,19 @@ const HorariosPage: React.FC = () => {
     downloadFile(csv, `horario_${selectedCareerInfo?.code || 'carrera'}_${viewMode}_${selectedPeriod}.csv`, 'text/csv;charset=utf-8;');
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleExportPdf = () => {
+    const doc = generateSchedulePdf({
+      assignments: filteredAssignments as any[],
+      timeslots: timeslots.map(t => ({ id: t.id, label: t.label, start_time: t.start_time, end_time: t.end_time, order_index: t.order_index })),
+      periodName: selectedPeriodInfo?.name || selectedPeriod,
+      careerName: selectedCareerInfo?.name || 'Carrera Universitaria',
+      viewMode: viewMode === 'level' ? 'nivel' : viewMode === 'room' ? 'sala' : 'docente',
+      selectedLevel: viewMode === 'level' ? selectedLevel : 0,
+      selectedRoom: viewMode === 'room' ? (rooms.find(r => r.id === selectedRoomId)?.name || 'TODAS') : 'TODAS',
+      selectedTeacher: viewMode === 'teacher' ? (teachers.find(t => t.id === selectedTeacherId)?.name || null) : null,
+      parallelTracks: 2,
+    });
+    doc.save(`horario_${selectedCareerInfo?.code || 'carrera'}_${viewMode}_${selectedPeriod}.pdf`);
   };
 
   return (
@@ -160,7 +171,7 @@ const HorariosPage: React.FC = () => {
           <button
             type="button"
             onClick={handleExportICal}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-primary hover:text-primary transition-all shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-primary hover:text-primary transition-all shadow-xs active:scale-95"
             title="Sincronizar con Google / Apple Calendar"
           >
             <span className="material-symbols-outlined text-base text-blue-500">calendar_month</span>
@@ -169,7 +180,7 @@ const HorariosPage: React.FC = () => {
           <button
             type="button"
             onClick={handleExportCsv}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-primary hover:text-primary transition-all shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-primary hover:text-primary transition-all shadow-xs active:scale-95"
             title="Descargar Planilla Excel"
           >
             <span className="material-symbols-outlined text-base text-emerald-500">table_view</span>
@@ -177,12 +188,12 @@ const HorariosPage: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={handlePrint}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition-all shadow-md shadow-primary/20"
-            title="Imprimir horario"
+            onClick={handleExportPdf}
+            className="btn-primary"
+            title="Descargar Horario en PDF Oficial"
           >
-            <span className="material-symbols-outlined text-base">print</span>
-            <span className="hidden sm:inline">Imprimir</span>
+            <span className="material-symbols-outlined text-[17px]">picture_as_pdf</span>
+            <span className="hidden sm:inline">Descargar PDF</span>
           </button>
         </div>
       }

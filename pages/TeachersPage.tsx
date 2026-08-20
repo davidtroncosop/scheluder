@@ -405,14 +405,14 @@ const TeachersPage: React.FC = () => {
       onPeriodChange={setSelectedPeriod}
       actions={
         <div className="flex items-center gap-4">
-          <span className="text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700">
+          <span className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/80 px-3 py-1.5 rounded-full border border-slate-200/80 dark:border-slate-700/60 shadow-xs">
             {teachers.length} docentes registrados
           </span>
           <button 
             onClick={() => openModal()}
-            className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg font-bold hover:bg-primary-dark transition-all shadow-md shadow-primary/20"
+            className="btn-primary"
           >
-            <span className="material-symbols-outlined">person_add</span>
+            <span className="material-symbols-outlined text-[18px]">person_add</span>
             Nuevo Docente
           </button>
         </div>
