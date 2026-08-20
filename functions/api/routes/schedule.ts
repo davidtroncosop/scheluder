@@ -355,24 +355,37 @@ scheduleRoutes.get('/schedule/score', authMiddleware, async (c) => {
     const blocked = new Set((availability.results as any[]).filter(row => row.status === 'blocked').map(row => `${row.timeslot_id}:${row.day_of_week}`));
     const preferred = new Set((availability.results as any[]).filter(row => row.status === 'preference').map(row => `${row.timeslot_id}:${row.day_of_week}`));
     const orderById = new Map((timeslots.results as any[]).map(row => [row.id, row.order_index]));
+    const isTypeCompatible = (secType?: string, rmType?: string) => {
+        const s = (secType || 'TEO').toUpperCase();
+        const r = (rmType || 'TEO').toUpperCase();
+        if (s === 'LAB') return r === 'LAB' || r === 'SIM';
+        if (s === 'SIM') return r === 'SIM';
+        if (s === 'TAL') return r === 'TAL';
+        return r === 'TEO' || r === 'AUD';
+    };
+
     const scores: any[] = [];
 
     for (const ts of timeslots.results as any[]) {
         for (let day = 1; day <= 5; day++) {
             const slotKey = `${ts.id}:${day}`;
             for (const room of rooms.results as any[]) {
-                if (roomBusy.has(`${room.id}:${slotKey}`) || teacherBusy.has(slotKey) || blocked.has(slotKey) || parentChildBusy.has(slotKey)) continue;
+                // Strict Hard Constraints - Skip any invalid or conflicting slot
+                if (roomBusy.has(`${room.id}:${slotKey}`)) continue;
+                if (teacherBusy.has(slotKey) || blocked.has(slotKey)) continue;
+                if (parentChildBusy.has(slotKey)) continue;
+                if (levelBusy.has(slotKey)) continue;
+                if (room.capacity < section.expected_students) continue;
+                if (!isTypeCompatible(section.type, room.type)) continue;
+
                 let score = 100;
                 const breakdown: Array<{ rule: string; points: number }> = [];
                 if (section.type === room.type) { score += 30; breakdown.push({ rule: 'Tipo de sala coincide', points: 30 }); }
-                else if (section.type !== 'TEO') { score -= 15; breakdown.push({ rule: 'Tipo de sala diferente', points: -15 }); }
                 if (preferred.has(slotKey)) { score += 20; breakdown.push({ rule: 'Preferencia del docente', points: 20 }); }
                 const adjacent = rows.some(row => row.level === section.level && row.career_id === section.career_id && row.day_of_week === day && Math.abs((orderById.get(row.timeslot_id) as number) - ts.order_index) === 1);
                 if (adjacent) { score += 20; breakdown.push({ rule: 'Horario contiguo con mismo nivel', points: 20 }); }
                 if (room.capacity > section.expected_students * 2) { score -= 10; breakdown.push({ rule: 'Sala demasiado grande', points: -10 }); }
                 if (day === 5 && ts.order_index >= 6) { score -= 15; breakdown.push({ rule: 'Viernes último módulo', points: -15 }); }
-                if (levelBusy.has(slotKey)) { score -= 15; breakdown.push({ rule: 'Choque de nivel', points: -15 }); }
-                if (room.capacity < section.expected_students) { score -= 15; breakdown.push({ rule: 'Capacidad insuficiente', points: -15 }); }
                 scores.push({ timeslot_id: ts.id, timeslot_label: ts.label, day_of_week: day, room_id: room.id, room_name: room.name, score: Math.max(1, Math.min(100, score)), breakdown, blocked: false });
             }
         }
