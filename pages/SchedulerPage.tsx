@@ -50,6 +50,14 @@ const SchedulerPage: React.FC = () => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showAuditPanel, setShowAuditPanel] = useState(false);
   const [showConflictsPanel, setShowConflictsPanel] = useState(false);
+  const [autoAssignProgress, setAutoAssignProgress] = useState<{
+    current: number;
+    total: number;
+    currentSubjectName?: string;
+    currentNrc?: string;
+    completed: number;
+    failed: number;
+  } | null>(null);
   const [proposalResult, setProposalResult] = useState<{
     completed: number;
     failed: number;
@@ -473,7 +481,7 @@ const SchedulerPage: React.FC = () => {
     await executeAssignment(section, roomId, timeslotId, dayOfWeek);
   };
 
-  // Auto assign solver handler
+  // Auto assign solver handler with Live Progress Tracking
   const handleAutoAssign = async () => {
     if (!sections.length || !selectedPeriod) return;
     setSaving(true);
@@ -482,7 +490,27 @@ const SchedulerPage: React.FC = () => {
     let completed = 0;
     let failed = 0;
 
+    setAutoAssignProgress({
+      current: 0,
+      total: queue.length,
+      currentSubjectName: 'Iniciando optimización heurística...',
+      completed: 0,
+      failed: 0,
+    });
+
+    let index = 0;
     for (const sectionId of queue) {
+      index++;
+      const currentSec = sections.find(s => s.id === sectionId);
+      setAutoAssignProgress({
+        current: index,
+        total: queue.length,
+        currentSubjectName: currentSec?.subject_name || currentSec?.subject_code || 'Asignatura',
+        currentNrc: currentSec?.nrc,
+        completed,
+        failed,
+      });
+
       try {
         const scores = await api.getSlotScores(sectionId, selectedPeriod);
         const best = scores.find(score => !score.blocked);
@@ -501,10 +529,20 @@ const SchedulerPage: React.FC = () => {
       } catch {
         failed++;
       }
+
+      setAutoAssignProgress({
+        current: index,
+        total: queue.length,
+        currentSubjectName: currentSec?.subject_name || currentSec?.subject_code || 'Asignatura',
+        currentNrc: currentSec?.nrc,
+        completed,
+        failed,
+      });
     }
 
     await loadScheduleData();
     setSaving(false);
+    setAutoAssignProgress(null);
     setProposalResult({
       completed,
       failed,
@@ -831,6 +869,79 @@ const SchedulerPage: React.FC = () => {
           onClose={() => setShowAuditPanel(false)}
           auditLog={auditLog}
         />
+
+        {/* Real-Time Auto-Assign Optimization Progress Modal */}
+        {autoAssignProgress && (
+          <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col gap-4 text-center">
+              {/* Animated Icon */}
+              <div className="mx-auto size-16 rounded-2xl bg-gradient-to-tr from-primary to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-primary/30">
+                <span className="material-symbols-outlined text-3xl animate-spin">progress_activity</span>
+              </div>
+
+              {/* Title & Status */}
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
+                  Generando Propuesta Óptima
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Evaluando restricciones de aforo, choque de nivel y salas en vivo
+                </p>
+              </div>
+
+              {/* Current Evaluating Section Card */}
+              <div className="bg-slate-50 dark:bg-slate-800/80 rounded-2xl p-3 border border-slate-200 dark:border-slate-700/70 text-left">
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  <span>Procesando</span>
+                  {autoAssignProgress.currentNrc && (
+                    <span className="font-mono text-primary">NRC {autoAssignProgress.currentNrc}</span>
+                  )}
+                </div>
+                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                  {autoAssignProgress.currentSubjectName || 'Evaluando compatibilidad...'}
+                </p>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="space-y-1.5 text-left">
+                <div className="flex items-center justify-between text-xs font-black">
+                  <span className="text-slate-700 dark:text-slate-300">
+                    Bloque {autoAssignProgress.current} de {autoAssignProgress.total}
+                  </span>
+                  <span className="text-primary font-mono text-sm">
+                    {autoAssignProgress.total > 0
+                      ? Math.round((autoAssignProgress.current / autoAssignProgress.total) * 100)
+                      : 0}%
+                  </span>
+                </div>
+                <div className="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-200 dark:border-slate-700">
+                  <div
+                    className="h-full bg-gradient-to-r from-primary to-indigo-500 rounded-full transition-all duration-200 ease-out shadow-xs"
+                    style={{
+                      width: `${autoAssignProgress.total > 0 ? (autoAssignProgress.current / autoAssignProgress.total) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Live Counters */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                  <div className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">
+                    {autoAssignProgress.completed}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Asignados</div>
+                </div>
+                <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
+                  <div className="text-sm font-extrabold text-amber-600 dark:text-amber-400">
+                    {autoAssignProgress.failed}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sin Espacio Válido</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Proposal Result Modal with Academic Disclaimer */}
         {proposalResult && (
