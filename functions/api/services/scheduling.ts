@@ -258,19 +258,23 @@ export async function validateAssignment(db: D1Database, params: {
         });
     }
 
-    // Specific Room Compatibility constraint
+    // Specific Room Compatibility constraint (filtered by section type)
     if (section.subject_id) {
         const roomReqs = await db.prepare(`
-            SELECT room_id, requirement_level FROM subject_room_compatibilities WHERE subject_id = ?
+            SELECT src.room_id, src.requirement_level, r.type as room_type
+            FROM subject_room_compatibilities src
+            JOIN rooms r ON r.id = src.room_id
+            WHERE src.subject_id = ?
         `).bind(section.subject_id).all();
-        if (roomReqs.results.length > 0) {
-            const matching = roomReqs.results.find((r: any) => r.room_id === params.room_id);
-            const hasExclusive = roomReqs.results.some((r: any) => r.requirement_level === 'EXCLUSIVE');
+        const relevantReqs = (roomReqs.results as any[]).filter(r => isTypeCompatible(section.type, r.room_type));
+        if (relevantReqs.length > 0) {
+            const matching = relevantReqs.find((r: any) => r.room_id === params.room_id);
+            const hasExclusive = relevantReqs.some((r: any) => r.requirement_level === 'EXCLUSIVE');
             if (hasExclusive && !matching) {
                 conflicts.push({
                     type: 'CRITICAL',
                     rule_code: 'ROOM_NOT_COMPATIBLE',
-                    description: `Esta asignatura requiere una de sus salas exclusivas designadas`,
+                    description: `La sección ${section.type} de esta asignatura requiere una de sus salas exclusivas designadas`,
                 });
             }
         }
