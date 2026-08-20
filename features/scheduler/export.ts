@@ -137,20 +137,30 @@ export const generateScheduleCsv = (assignments: Assignment[]): string => {
 /**
  * Generates a clean, vector-based PDF document of the schedule
  */
-export const generateSchedulePdf = (options: SchedulePdfExportOptions): jsPDF => {
+/**
+ * Renders a single academic schedule grid page on a jsPDF instance
+ */
+function renderSingleSchedulePage(doc: jsPDF, options: {
+  assignments: Assignment[];
+  timeslots: Array<{ id: string; label: string; start_time?: string; end_time?: string; order_index: number }>;
+  periodName: string;
+  careerName: string;
+  scopeLabel: string;
+  effectiveTracks: number;
+  pageNumber?: number;
+  totalPages?: number;
+}) {
   const {
     assignments,
     timeslots,
-    periodName = 'Primer Semestre 2026',
-    careerName = 'Planificación Académica',
-    viewMode = 'nivel',
-    selectedLevel = 0,
-    selectedRoom = 'TODAS',
-    selectedTeacher = null,
-    parallelTracks = 2,
+    periodName,
+    careerName,
+    scopeLabel,
+    effectiveTracks,
+    pageNumber,
+    totalPages,
   } = options;
 
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = 297;
   const pageHeight = 210;
   const marginX = 10;
@@ -169,34 +179,25 @@ export const generateSchedulePdf = (options: SchedulePdfExportOptions): jsPDF =>
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(148, 163, 184); // slate-400
-  
-  let scopeLabel = 'Vista General Completa';
-  if (viewMode === 'nivel') {
-    scopeLabel = selectedLevel > 0 ? `Nivel ${selectedLevel}°` : 'Todos los Niveles';
-  } else if (viewMode === 'sala') {
-    scopeLabel = `Sala: ${selectedRoom}`;
-  } else if (viewMode === 'docente') {
-    scopeLabel = `Docente: ${selectedTeacher || 'Todos'}`;
-  }
-
   doc.text(`${careerName} · ${periodName} · ${scopeLabel}`, marginX + 6, marginTop + 12);
 
   // Right metadata in banner
   const todayStr = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
   doc.text(`Emitido: ${todayStr}`, marginX + usableWidth - 6, marginTop + 7, { align: 'right' });
-  doc.text(`${assignments.length} clases programadas`, marginX + usableWidth - 6, marginTop + 12, { align: 'right' });
+  const pageInfo = pageNumber && totalPages ? ` · Pág. ${pageNumber}/${totalPages}` : '';
+  doc.text(`${assignments.length} clases programadas${pageInfo}`, marginX + usableWidth - 6, marginTop + 12, { align: 'right' });
 
   // Grid Configuration
   const gridStartY = marginTop + 19;
   const timeColWidth = 24;
   const daysColWidth = usableWidth - timeColWidth; // 253 mm
   const dayWidth = daysColWidth / 5; // 50.6 mm per day
-  const effectiveTracks = viewMode === 'nivel' ? Math.max(1, Math.min(3, parallelTracks)) : 1;
-  const trackWidth = dayWidth / effectiveTracks;
+  const tracks = Math.max(1, Math.min(3, effectiveTracks));
+  const trackWidth = dayWidth / tracks;
 
   const sortedTimeslots = [...timeslots].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
   const availableGridHeight = pageHeight - gridStartY - 14; // margin for footer
-  const headerHeight = effectiveTracks > 1 ? 10 : 7;
+  const headerHeight = tracks > 1 ? 10 : 7;
   const rowHeight = Math.min(22, Math.max(14, (availableGridHeight - headerHeight) / Math.max(1, sortedTimeslots.length)));
 
   // Day Headers
@@ -212,14 +213,14 @@ export const generateSchedulePdf = (options: SchedulePdfExportOptions): jsPDF =>
   dayNames.forEach((dName, dIdx) => {
     const dayX = marginX + timeColWidth + (dIdx * dayWidth);
     doc.setFillColor(30, 41, 59);
-    doc.rect(dayX, gridStartY, dayWidth, effectiveTracks > 1 ? 5.5 : headerHeight, 'F');
+    doc.rect(dayX, gridStartY, dayWidth, tracks > 1 ? 5.5 : headerHeight, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
-    doc.text(dName, dayX + (dayWidth / 2), gridStartY + (effectiveTracks > 1 ? 3.8 : headerHeight / 2 + 1), { align: 'center' });
+    doc.text(dName, dayX + (dayWidth / 2), gridStartY + (tracks > 1 ? 3.8 : headerHeight / 2 + 1), { align: 'center' });
 
-    if (effectiveTracks > 1) {
-      for (let tIdx = 0; tIdx < effectiveTracks; tIdx++) {
+    if (tracks > 1) {
+      for (let tIdx = 0; tIdx < tracks; tIdx++) {
         const subX = dayX + (tIdx * trackWidth);
         doc.setFillColor(51, 65, 85); // slate-700
         doc.rect(subX, gridStartY + 5.5, trackWidth, 4.5, 'F');
@@ -256,7 +257,7 @@ export const generateSchedulePdf = (options: SchedulePdfExportOptions): jsPDF =>
     for (let d = 1; d <= 5; d++) {
       const dayX = marginX + timeColWidth + ((d - 1) * dayWidth);
 
-      for (let tIdx = 0; tIdx < effectiveTracks; tIdx++) {
+      for (let tIdx = 0; tIdx < tracks; tIdx++) {
         const cellX = dayX + (tIdx * trackWidth);
 
         // Empty slot background & border
@@ -275,7 +276,7 @@ export const generateSchedulePdf = (options: SchedulePdfExportOptions): jsPDF =>
             const num = parseInt(a.section_code.replace(/\D/g, ''));
             if (!isNaN(num) && num >= 1 && num <= 3) return (num - 1) === tIdx;
           }
-          return idx % effectiveTracks === tIdx;
+          return idx % tracks === tIdx;
         });
 
         if (asg) {
@@ -313,7 +314,7 @@ export const generateSchedulePdf = (options: SchedulePdfExportOptions): jsPDF =>
           // Subject Name
           doc.setTextColor(15, 23, 42);
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(effectiveTracks === 3 ? 5.5 : 6.5);
+          doc.setFontSize(tracks === 3 ? 5.5 : 6.5);
           const rawName = asg.subject_name || asg.subject_code || 'Asignatura';
           const truncatedName = doc.splitTextToSize(rawName, maxTextW)[0] || rawName;
           doc.text(truncatedName, innerX, rowY + 3.8);
@@ -353,7 +354,144 @@ export const generateSchedulePdf = (options: SchedulePdfExportOptions): jsPDF =>
   doc.setTextColor(100, 116, 139);
   doc.text('Leyenda: [TEO] Teoría · [LAB] Laboratorio · [SIM] Simulación · [TAL] Taller', marginX, footerY);
   doc.text('Documento oficial generado por Scheduler Pro · Sistema de Planificación Universitaria', marginX + usableWidth, footerY, { align: 'right' });
+}
 
+/**
+ * Generates a clean, vector-based PDF document of the schedule respecting active view and filters
+ */
+export const generateSchedulePdf = (options: SchedulePdfExportOptions): jsPDF => {
+  const {
+    assignments,
+    timeslots,
+    periodName = 'Primer Semestre 2026',
+    careerName = 'Planificación Académica',
+    viewMode = 'nivel',
+    selectedLevel = 0,
+    selectedRoom = 'TODAS',
+    selectedTeacher = null,
+    parallelTracks = 2,
+  } = options;
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  // 1. Nivel View Mode
+  if (viewMode === 'nivel') {
+    if (selectedLevel > 0) {
+      // Specific single level
+      const levelAssignments = assignments.filter(a => Number(a.level) === selectedLevel);
+      renderSingleSchedulePage(doc, {
+        assignments: levelAssignments,
+        timeslots,
+        periodName,
+        careerName,
+        scopeLabel: `Horario Nivel ${selectedLevel}°`,
+        effectiveTracks: parallelTracks,
+      });
+      return doc;
+    } else {
+      // All levels: Generate 1 page per level
+      const distinctLevels = Array.from(new Set(assignments.map(a => Number(a.level)).filter(l => !isNaN(l) && l > 0))).sort((a, b) => a - b);
+      const levelsToRender = distinctLevels.length > 0 ? distinctLevels : [1];
+
+      levelsToRender.forEach((lvl, idx) => {
+        if (idx > 0) doc.addPage('a4', 'landscape');
+        const levelAssignments = assignments.filter(a => Number(a.level) === lvl);
+        renderSingleSchedulePage(doc, {
+          assignments: levelAssignments,
+          timeslots,
+          periodName,
+          careerName,
+          scopeLabel: `Horario Nivel ${lvl}°`,
+          effectiveTracks: parallelTracks,
+          pageNumber: idx + 1,
+          totalPages: levelsToRender.length,
+        });
+      });
+      return doc;
+    }
+  }
+
+  // 2. Sala View Mode
+  if (viewMode === 'sala') {
+    if (selectedRoom && selectedRoom !== 'TODAS') {
+      const roomAssignments = assignments.filter(a => (a.room_name || '').toUpperCase() === selectedRoom.toUpperCase());
+      renderSingleSchedulePage(doc, {
+        assignments: roomAssignments,
+        timeslots,
+        periodName,
+        careerName,
+        scopeLabel: `Horario Sala: ${selectedRoom}`,
+        effectiveTracks: 1,
+      });
+      return doc;
+    } else {
+      // All rooms: Generate 1 page per room
+      const distinctRooms = Array.from(new Set(assignments.map(a => (a.room_name || '').trim()).filter(Boolean))).sort();
+      const roomsToRender = distinctRooms.length > 0 ? distinctRooms : ['SALA GENERAL'];
+
+      roomsToRender.forEach((room, idx) => {
+        if (idx > 0) doc.addPage('a4', 'landscape');
+        const roomAssignments = assignments.filter(a => (a.room_name || '').trim() === room);
+        renderSingleSchedulePage(doc, {
+          assignments: roomAssignments,
+          timeslots,
+          periodName,
+          careerName,
+          scopeLabel: `Horario Sala: ${room}`,
+          effectiveTracks: 1,
+          pageNumber: idx + 1,
+          totalPages: roomsToRender.length,
+        });
+      });
+      return doc;
+    }
+  }
+
+  // 3. Docente View Mode
+  if (viewMode === 'docente') {
+    if (selectedTeacher) {
+      const teacherAssignments = assignments.filter(a => (a.teacher_name || '').trim().toLowerCase() === selectedTeacher.trim().toLowerCase());
+      renderSingleSchedulePage(doc, {
+        assignments: teacherAssignments,
+        timeslots,
+        periodName,
+        careerName,
+        scopeLabel: `Horario Docente: ${selectedTeacher}`,
+        effectiveTracks: 1,
+      });
+      return doc;
+    } else {
+      // All teachers: Generate 1 page per teacher
+      const distinctTeachers = Array.from(new Set(assignments.map(a => (a.teacher_name || '').trim()).filter(Boolean))).sort();
+      const teachersToRender = distinctTeachers.length > 0 ? distinctTeachers : ['DOCENTE'];
+
+      teachersToRender.forEach((teacher, idx) => {
+        if (idx > 0) doc.addPage('a4', 'landscape');
+        const teacherAssignments = assignments.filter(a => (a.teacher_name || '').trim() === teacher);
+        renderSingleSchedulePage(doc, {
+          assignments: teacherAssignments,
+          timeslots,
+          periodName,
+          careerName,
+          scopeLabel: `Horario Docente: ${teacher}`,
+          effectiveTracks: 1,
+          pageNumber: idx + 1,
+          totalPages: teachersToRender.length,
+        });
+      });
+      return doc;
+    }
+  }
+
+  // Default Fallback
+  renderSingleSchedulePage(doc, {
+    assignments,
+    timeslots,
+    periodName,
+    careerName,
+    scopeLabel: 'Vista General Completa',
+    effectiveTracks: 1,
+  });
   return doc;
 };
 

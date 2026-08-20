@@ -7,6 +7,11 @@ interface ExportModalProps {
   onClose: () => void;
   assignments: Assignment[];
   periodName?: string;
+  viewMode?: 'nivel' | 'sala' | 'docente';
+  selectedLevel?: number;
+  selectedRoom?: string;
+  selectedTeacher?: string | null;
+  parallelTracks?: number;
   onExportPdf: () => Promise<void>;
 }
 
@@ -15,11 +20,31 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   onClose,
   assignments,
   periodName = 'Horario Académico',
+  viewMode = 'nivel',
+  selectedLevel = 0,
+  selectedRoom = 'TODAS',
+  selectedTeacher = null,
+  parallelTracks = 2,
   onExportPdf,
 }) => {
   const [busy, setBusy] = useState(false);
 
   if (!isOpen) return null;
+
+  let viewScopeDescription = 'Vista General';
+  if (viewMode === 'nivel') {
+    viewScopeDescription = selectedLevel > 0 
+      ? `Nivel ${selectedLevel}° (${parallelTracks} ${parallelTracks === 1 ? 'sección' : 'secciones'})` 
+      : 'Todos los Niveles (1 página por nivel)';
+  } else if (viewMode === 'sala') {
+    viewScopeDescription = selectedRoom && selectedRoom !== 'TODAS' 
+      ? `Sala: ${selectedRoom}` 
+      : 'Todas las Salas (1 página por sala)';
+  } else if (viewMode === 'docente') {
+    viewScopeDescription = selectedTeacher 
+      ? `Docente: ${selectedTeacher}` 
+      : 'Todos los Docentes (1 página por docente)';
+  }
 
   const handleExportCsv = () => {
     const csvContent = generateScheduleCsv(assignments);
@@ -66,7 +91,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </button>
         </div>
 
-        <div className="py-4 space-y-3">
+        {/* Active View Scope Badge */}
+        <div className="bg-slate-50 dark:bg-slate-800/80 rounded-xl p-3 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary text-base">tune</span>
+            <span className="font-semibold text-slate-700 dark:text-slate-300">Vista seleccionada:</span>
+          </div>
+          <span className="font-bold text-primary px-2.5 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[11px]">
+            {viewScopeDescription}
+          </span>
+        </div>
+
+        <div className="py-2 space-y-3">
           {/* PDF */}
           <button
             type="button"
@@ -82,7 +118,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 Documento PDF
               </div>
               <div className="text-[11px] text-slate-500">
-                Grilla semanal imprimible con formato institucional
+                Grilla semanal imprimible respetando la vista {viewScopeDescription}
               </div>
             </div>
           </button>

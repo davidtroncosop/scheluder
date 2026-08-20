@@ -932,6 +932,11 @@ const SchedulerPage: React.FC = () => {
           onClose={() => setShowExportModal(false)}
           assignments={assignments}
           periodName={periods.find(p => p.id === selectedPeriod)?.name}
+          viewMode={viewMode}
+          selectedLevel={selectedViewLevel}
+          selectedRoom={selectedViewRoom}
+          selectedTeacher={selectedViewTeacher}
+          parallelTracks={2}
           onExportPdf={handleExportPdf}
         />
 

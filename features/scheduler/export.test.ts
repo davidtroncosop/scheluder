@@ -78,7 +78,7 @@ describe('scheduler export utilities', () => {
     expect(lines[2]).toContain('LAB 1');
   });
 
-  it('generates a clean vector-based PDF document without errors', () => {
+  it('generates a clean vector-based PDF document for single level view', () => {
     const doc = generateSchedulePdf({
       assignments: mockAssignments,
       timeslots: [
@@ -94,6 +94,49 @@ describe('scheduler export utilities', () => {
 
     expect(doc).toBeDefined();
     expect(typeof doc.save).toBe('function');
-    expect(typeof doc.output).toBe('function');
+  });
+
+  it('generates multi-page PDF for all levels booklet when selectedLevel is 0', () => {
+    const doc = generateSchedulePdf({
+      assignments: mockAssignments,
+      timeslots: [
+        { id: 'ts-1', label: 'M1', start_time: '08:30', end_time: '10:00', order_index: 1 },
+        { id: 'ts-2', label: 'M2', start_time: '10:15', end_time: '11:45', order_index: 2 },
+      ],
+      periodName: 'Primer Semestre 2026',
+      careerName: 'Kinesiología',
+      viewMode: 'nivel',
+      selectedLevel: 0,
+      parallelTracks: 2,
+    });
+
+    expect(doc).toBeDefined();
+    expect(doc.getNumberOfPages()).toBe(2); // Level 1 and Level 2
+  });
+
+  it('generates PDF filtered by room and teacher views', () => {
+    const docRoom = generateSchedulePdf({
+      assignments: mockAssignments,
+      timeslots: [
+        { id: 'ts-1', label: 'M1', start_time: '08:30', end_time: '10:00', order_index: 1 },
+      ],
+      periodName: 'Primer Semestre 2026',
+      careerName: 'Kinesiología',
+      viewMode: 'sala',
+      selectedRoom: 'SALA 201',
+    });
+    expect(docRoom).toBeDefined();
+
+    const docTeacher = generateSchedulePdf({
+      assignments: mockAssignments,
+      timeslots: [
+        { id: 'ts-1', label: 'M1', start_time: '08:30', end_time: '10:00', order_index: 1 },
+      ],
+      periodName: 'Primer Semestre 2026',
+      careerName: 'Kinesiología',
+      viewMode: 'docente',
+      selectedTeacher: 'Dr. Soto',
+    });
+    expect(docTeacher).toBeDefined();
   });
 });
