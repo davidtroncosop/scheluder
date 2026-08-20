@@ -16,6 +16,7 @@ interface SchedulerSidebarProps {
   onDragStart: (e: React.DragEvent, section: Section) => void;
   onDragEnd: () => void;
   onOpenSectionModal: (section?: Section | null, preselectedLevel?: number) => void;
+  onDuplicateSection?: (section: Section) => void;
   onTeacherSelect?: (teacherName: string) => void;
 }
 
@@ -32,6 +33,7 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
   onDragStart,
   onDragEnd,
   onOpenSectionModal,
+  onDuplicateSection,
   onTeacherSelect,
 }) => {
   const [activeTab, setActiveTab] = useState<'secciones' | 'docentes'>('secciones');
@@ -352,6 +354,9 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                       <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
                         NRC {section.nrc}
                       </span>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                        {section.section_code ? (section.section_code.startsWith('SEC') ? section.section_code : `Sec ${section.section_code}`) : 'Sec 1'}
+                      </span>
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
                         N{section.level}
                       </span>
@@ -369,8 +374,21 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0.5">
                       {getDifficultyBadge(section)}
+                      {onDuplicateSection && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDuplicateSection(section);
+                          }}
+                          className="p-1 text-slate-400 hover:text-primary rounded transition-colors"
+                          title="Crear sección paralela (ej. Sección 2) de esta asignatura"
+                        >
+                          <span className="material-symbols-outlined text-xs">content_copy</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={(e) => {

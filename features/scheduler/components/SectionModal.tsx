@@ -10,9 +10,11 @@ interface SectionModalProps {
   availableTeachers: string[];
   existingTheories: Section[];
   defaultLevel?: number;
+  initialValues?: Partial<Section> | null;
   onSave: (data: {
     id?: string;
     nrc: string;
+    section_code?: string;
     subject_id: string;
     type: string;
     hours_per_week: number;
@@ -32,10 +34,12 @@ export const SectionModal: React.FC<SectionModalProps> = ({
   availableTeachers,
   existingTheories,
   defaultLevel,
+  initialValues,
   onSave,
   onDelete,
 }) => {
   const [nrc, setNrc] = useState('');
+  const [sectionCode, setSectionCode] = useState('1');
   const [subjectId, setSubjectId] = useState('');
   const [type, setType] = useState('TEO');
   const [hours, setHours] = useState(2);
@@ -48,6 +52,7 @@ export const SectionModal: React.FC<SectionModalProps> = ({
   useEffect(() => {
     if (section) {
       setNrc(section.nrc || '');
+      setSectionCode((section as any).section_code || '1');
       setSubjectId(section.subject_id || '');
       setType(section.type || 'TEO');
       setHours(Number(section.hours_per_week || 2));
@@ -55,8 +60,19 @@ export const SectionModal: React.FC<SectionModalProps> = ({
       setExpectedStudents(Number(section.expected_students || 30));
       setTeacherName(section.teacher_name || '');
       setParentSectionId(section.parent_section_id || '');
+    } else if (initialValues) {
+      setNrc(initialValues.nrc || '');
+      setSectionCode((initialValues as any).section_code || '2');
+      setSubjectId(initialValues.subject_id || allSubjects[0]?.id || '');
+      setType(initialValues.type || 'TEO');
+      setHours(Number(initialValues.hours_per_week || 2));
+      setLevel(Number(initialValues.level || defaultLevel || 1));
+      setExpectedStudents(Number(initialValues.expected_students || 30));
+      setTeacherName(initialValues.teacher_name || '');
+      setParentSectionId(initialValues.parent_section_id || '');
     } else {
       setNrc('');
+      setSectionCode('1');
       const targetLvl = defaultLevel && defaultLevel > 0 ? defaultLevel : 1;
       const matchedSubjects = allSubjects.filter(s => Number(s.nivel || 1) === targetLvl);
       const chosenSub = matchedSubjects[0] || allSubjects[0];
@@ -68,7 +84,7 @@ export const SectionModal: React.FC<SectionModalProps> = ({
       setTeacherName('');
       setParentSectionId('');
     }
-  }, [section, allSubjects, defaultLevel]);
+  }, [section, allSubjects, defaultLevel, initialValues]);
 
   if (!isOpen) return null;
 
@@ -79,6 +95,7 @@ export const SectionModal: React.FC<SectionModalProps> = ({
       await onSave({
         id: section?.id,
         nrc,
+        section_code: sectionCode,
         subject_id: subjectId,
         type,
         hours_per_week: hours,
@@ -99,10 +116,10 @@ export const SectionModal: React.FC<SectionModalProps> = ({
         <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-slate-800 shrink-0">
           <div>
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              {section ? `Editar Sección NRC ${section.nrc}` : 'Nueva Sección'}
+              {section ? 'Editar Sección' : initialValues ? 'Crear Sección Paralela' : 'Nueva Sección'}
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Configura los datos del ramo y sus dependencias teóricas/prácticas
+            <p className="text-xs text-slate-500">
+              {section ? `NRC ${section.nrc}` : initialValues ? 'Crea un nuevo paralelo (ej. Sección 2) para esta asignatura' : 'Define un nuevo bloque de curso en el catálogo'}
             </p>
           </div>
           <button
@@ -115,7 +132,7 @@ export const SectionModal: React.FC<SectionModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-3">
             {/* NRC */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -127,14 +144,32 @@ export const SectionModal: React.FC<SectionModalProps> = ({
                 value={nrc}
                 onChange={(e) => setNrc(e.target.value)}
                 placeholder="Ej: 10423"
-                className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white"
+                className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white font-mono font-bold"
               />
+            </div>
+
+            {/* Section / Paralelo */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Sección / Paralelo
+              </label>
+              <select
+                value={sectionCode}
+                onChange={(e) => setSectionCode(e.target.value)}
+                className="w-full text-xs bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 border-0 focus:ring-2 focus:ring-primary text-slate-900 dark:text-white font-bold"
+              >
+                <option value="1">Sección 1</option>
+                <option value="2">Sección 2</option>
+                <option value="3">Sección 3</option>
+                <option value="4">Sección 4</option>
+                <option value="5">Sección 5</option>
+              </select>
             </div>
 
             {/* Type */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Tipo de Sección
+                Tipo
               </label>
               <select
                 value={type}

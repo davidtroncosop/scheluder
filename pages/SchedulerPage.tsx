@@ -94,6 +94,7 @@ const SchedulerPage: React.FC = () => {
   // Sidebar & Teacher states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [modalDefaultLevel, setModalDefaultLevel] = useState<number>(1);
+  const [modalInitialValues, setModalInitialValues] = useState<Partial<Section> | null>(null);
   const [teachers, setTeachers] = useState<dataStore.ImportedTeacher[]>([]);
   const [auditLog, setAuditLog] = useState<AuditLogItem[]>([
     { id: '1', timestamp: new Date(Date.now() - 3600000), action: 'save', description: 'Guardado borrador', user: 'Coordinador' },
@@ -617,13 +618,40 @@ const SchedulerPage: React.FC = () => {
   // Section Modal (Backlog CRUD) handlers
   const handleOpenSectionModal = (section?: Section | null, preselectedLevel?: number) => {
     setEditingSection(section || null);
+    setModalInitialValues(null);
     setModalDefaultLevel(preselectedLevel || (section ? section.level : (selectedViewLevel > 0 ? selectedViewLevel : 1)));
+    setIsSectionModalOpen(true);
+  };
+
+  const handleDuplicateSection = (sourceSection: Section) => {
+    const sameSubjectSections = sections.filter(s => s.subject_id === sourceSection.subject_id);
+    const nextSecNum = sameSubjectSections.length + 1;
+
+    // Find highest NRC to suggest next number
+    const allNrcs = sections.map(s => parseInt(s.nrc, 10)).filter(n => !isNaN(n));
+    const maxNrc = allNrcs.length > 0 ? Math.max(...allNrcs) : 11000;
+    const suggestedNrc = String(maxNrc + 1);
+
+    setEditingSection(null);
+    setModalDefaultLevel(sourceSection.level);
+    setModalInitialValues({
+      subject_id: sourceSection.subject_id,
+      type: sourceSection.type,
+      hours_per_week: sourceSection.hours_per_week,
+      level: sourceSection.level,
+      expected_students: sourceSection.expected_students,
+      section_code: String(nextSecNum),
+      nrc: suggestedNrc,
+      teacher_name: '',
+      parent_section_id: sourceSection.parent_section_id || '',
+    });
     setIsSectionModalOpen(true);
   };
 
   const handleSaveSection = async (formData: {
     id?: string;
     nrc: string;
+    section_code?: string;
     subject_id: string;
     type: string;
     hours_per_week: number;
@@ -641,6 +669,7 @@ const SchedulerPage: React.FC = () => {
             subject_id: formData.subject_id,
             teacher_id: teacher?.id || null,
             nrc: formData.nrc,
+            section_code: formData.section_code || '1',
             type: formData.type,
             parent_section_id: formData.parent_section_id || null,
             hours_per_week: formData.hours_per_week,
@@ -654,6 +683,7 @@ const SchedulerPage: React.FC = () => {
             subject_id: formData.subject_id,
             teacher_id: teacher?.id || null,
             nrc: formData.nrc,
+            section_code: formData.section_code || '1',
             type: formData.type,
             parent_section_id: formData.parent_section_id || null,
             hours_per_week: formData.hours_per_week,
@@ -662,7 +692,7 @@ const SchedulerPage: React.FC = () => {
         }
       }
       await loadScheduleData();
-      addAuditEntry('save_section', `Guardada sección NRC ${formData.nrc}`);
+      addAuditEntry('save_section', `Guardada sección NRC ${formData.nrc} (${formData.section_code ? `Sec ${formData.section_code}` : 'Sec 1'})`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar sección');
     }
@@ -800,6 +830,7 @@ const SchedulerPage: React.FC = () => {
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onOpenSectionModal={handleOpenSectionModal}
+            onDuplicateSection={handleDuplicateSection}
             onTeacherSelect={(name) => {
               setViewMode('docente');
               setSelectedViewTeacher(name);
@@ -860,11 +891,13 @@ const SchedulerPage: React.FC = () => {
           onClose={() => {
             setIsSectionModalOpen(false);
             setEditingSection(null);
+            setModalInitialValues(null);
           }}
           allSubjects={allSubjects}
           availableTeachers={availableTeachersList}
           existingTheories={sections.filter(s => s.type === 'TEO')}
           defaultLevel={modalDefaultLevel}
+          initialValues={modalInitialValues}
           onSave={handleSaveSection}
           onDelete={handleDeleteSection}
         />

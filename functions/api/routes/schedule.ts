@@ -27,6 +27,7 @@ scheduleRoutes.get('/schedule', authMiddleware, async (c) => {
     SELECT 
       sa.*,
       sec.nrc,
+      sec.section_code,
       sec.type as section_type,
       sub.name as subject_name,
       sub.code as subject_code,

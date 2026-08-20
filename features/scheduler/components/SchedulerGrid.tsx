@@ -832,6 +832,9 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                                         <span className="font-bold text-xs text-slate-900 dark:text-white leading-tight">
                                           {assignment.subject_name || assignment.subject_code}
                                         </span>
+                                        <span className="px-1 py-0.2 rounded text-[8px] font-black uppercase bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                          {assignment.section_code ? (assignment.section_code.startsWith('SEC') ? assignment.section_code : `Sec ${assignment.section_code}`) : `Sec ${pIdx + 1}`}
+                                        </span>
                                         <span className={`px-1 py-0.2 rounded text-[8px] uppercase border ${getTypeStyle(assignment.section_type)}`}>
                                           {assignment.section_type || 'TEO'}
                                         </span>

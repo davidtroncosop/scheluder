@@ -2,6 +2,7 @@ export interface SchedulerSection {
   id: string;
   subject_id: string;
   nrc: string;
+  section_code?: string | null;
   subject_name: string;
   subject_code: string;
   level: number;
@@ -24,6 +25,7 @@ export interface SchedulerAssignment {
   id: string;
   section_id: string;
   nrc: string;
+  section_code?: string | null;
   subject_name: string;
   subject_code: string;
   level: number;
@@ -80,12 +82,15 @@ export const mapBackendAssignments = (backendAssignments: Array<Record<string, a
 
   return sorted.map(assignment => {
     const key = `${assignment.day_of_week}-${assignment.timeslot_id}`;
-    const parallelIndex = slotCounts[key] || 0;
-    slotCounts[key] = parallelIndex + 1;
+    const computedParallelIndex = assignment.parallel_index !== undefined && assignment.parallel_index !== null
+      ? Number(assignment.parallel_index)
+      : (slotCounts[key] || 0);
+    slotCounts[key] = (slotCounts[key] || 0) + 1;
     return {
       id: assignment.id,
       section_id: assignment.section_id,
       nrc: assignment.nrc,
+      section_code: assignment.section_code || null,
       subject_name: assignment.subject_name,
       subject_code: assignment.subject_code,
       level: assignment.level,
@@ -100,7 +105,7 @@ export const mapBackendAssignments = (backendAssignments: Array<Record<string, a
       start_time: assignment.start_time,
       end_time: assignment.end_time,
       day_of_week: assignment.day_of_week,
-      parallel_index: parallelIndex,
+      parallel_index: computedParallelIndex,
       period_id: assignment.period_id,
     };
   });
