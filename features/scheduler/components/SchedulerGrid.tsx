@@ -366,6 +366,20 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
     return `Sec ${(parallelIndex ?? 0) + 1}`;
   };
 
+  const getAssignmentTrackIndex = (assignment: Assignment, fallbackIndex: number, totalTracks: number): number => {
+    if (assignment.section_code) {
+      const match = String(assignment.section_code).match(/\d+/);
+      if (match) {
+        const num = parseInt(match[0], 10);
+        if (num >= 1) return (num - 1) % totalTracks;
+      }
+    }
+    if (assignment.parallel_index !== undefined && assignment.parallel_index !== null) {
+      return Number(assignment.parallel_index) % totalTracks;
+    }
+    return fallbackIndex % totalTracks;
+  };
+
   // Active days list based on timeScope
   const activeDays = timeScope === 'week' 
     ? [1, 2, 3, 4, 5] 
@@ -842,10 +856,8 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                         const compatibility = getSlotCompatibility(dayOfWeek, slot.id, pIdx);
 
                         const trackAssignments = cellAssignments.filter((a, idx) => {
-                          if (a.parallel_index !== undefined && a.parallel_index !== null) {
-                            return Number(a.parallel_index) === pIdx;
-                          }
-                          return idx % effectiveTracks === pIdx;
+                          const trackIdx = getAssignmentTrackIndex(a, idx, effectiveTracks);
+                          return trackIdx === pIdx;
                         });
 
                         return (

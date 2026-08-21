@@ -144,13 +144,24 @@ scheduleRoutes.post('/schedule/assign', authMiddleware, async (c) => {
 
     try {
         const section = await db.prepare(`
-            SELECT s.id, s.period_id, s.career_id
+            SELECT s.id, s.period_id, s.career_id, s.section_code
             FROM sections s
             WHERE s.id = ? AND s.period_id = ?
         `).bind(section_id, period_id).first() as any;
 
         if (!section) {
             return c.json({ error: 'Sección no encontrada' }, 404);
+        }
+
+        let assignedParallelIndex = parallel_index !== undefined && parallel_index !== null ? Number(parallel_index) : 0;
+        if (section.section_code) {
+            const numMatch = String(section.section_code).match(/\d+/);
+            if (numMatch) {
+                const num = parseInt(numMatch[0], 10);
+                if (num >= 1) {
+                    assignedParallelIndex = num - 1;
+                }
+            }
         }
 
         const targetCareerId = section.career_id;
@@ -175,7 +186,7 @@ scheduleRoutes.post('/schedule/assign', authMiddleware, async (c) => {
             day_of_week,
             career_id: targetCareerId,
             period_id,
-            parallel_index: parallel_index || 0,
+            parallel_index: assignedParallelIndex,
         });
 
         const criticalConflicts = conflicts.filter(c => c.type === 'CRITICAL');
@@ -191,9 +202,9 @@ scheduleRoutes.post('/schedule/assign', authMiddleware, async (c) => {
       INSERT INTO schedule_assignments 
       (id, career_id, period_id, section_id, room_id, timeslot_id, day_of_week, parallel_index, assigned_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(id, targetCareerId, period_id, section_id, room_id, timeslot_id, day_of_week, parallel_index || 0, user.id).run();
+    `).bind(id, targetCareerId, period_id, section_id, room_id, timeslot_id, day_of_week, assignedParallelIndex, user.id).run();
         await saveScheduleStatus(db, targetCareerId, period_id, 'draft', user.id);
-        await recordAudit(db, user, 'ASSIGN', 'assignment', id, null, { section_id, room_id, timeslot_id, day_of_week, parallel_index: parallel_index || 0, period_id });
+        await recordAudit(db, user, 'ASSIGN', 'assignment', id, null, { section_id, room_id, timeslot_id, day_of_week, parallel_index: assignedParallelIndex, period_id });
 
         for (const conflict of conflicts.filter(c => c.type === 'WARNING')) {
             await db.prepare(`
@@ -446,13 +457,24 @@ scheduleRoutes.get('/schedule/score', authMiddleware, async (c) => {
             // Hard constraint: Maximum 3 parallel sections per level in a single timeslot
             if (levelRows.length >= 3) continue;
 
-            // Determine next free parallel track index (0, 1, or 2)
-            const occupiedIndices = levelRows.map(r => r.parallel_index ?? 0);
+            // Determine target parallel track index for this section:
             let nextParallelIndex = 0;
-            while (occupiedIndices.includes(nextParallelIndex) && nextParallelIndex < 3) {
-                nextParallelIndex++;
+            if (section.section_code) {
+                const numMatch = String(section.section_code).match(/\d+/);
+                if (numMatch) {
+                    const num = parseInt(numMatch[0], 10);
+                    if (num >= 1) nextParallelIndex = num - 1;
+                }
+            } else {
+                const occupiedIndices = levelRows.map(r => r.parallel_index ?? 0);
+                while (occupiedIndices.includes(nextParallelIndex) && nextParallelIndex < 3) {
+                    nextParallelIndex++;
+                }
             }
-            if (nextParallelIndex >= 3) continue;
+
+            // Check if this specific section track is already occupied in this timeslot
+            const isTrackOccupied = levelRows.some(r => Number(r.parallel_index ?? 0) === nextParallelIndex && r.section_id !== section.id);
+            if (isTrackOccupied || nextParallelIndex >= 3) continue;
 
             for (const room of rooms.results as any[]) {
                 // Strict Hard Constraints - Skip any invalid or conflicting slot

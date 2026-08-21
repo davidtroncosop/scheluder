@@ -269,12 +269,12 @@ function renderSingleSchedulePage(doc: jsPDF, options: {
         // Find assignment for this cell
         const cellAssignments = assignments.filter(a => a.day_of_week === d && a.timeslot_id === slot.id);
         const asg = cellAssignments.find((a, idx) => {
-          if (a.parallel_index !== undefined && a.parallel_index !== null) {
-            return Number(a.parallel_index) === tIdx;
-          }
           if (a.section_code) {
             const num = parseInt(a.section_code.replace(/\D/g, ''));
             if (!isNaN(num) && num >= 1 && num <= 3) return (num - 1) === tIdx;
+          }
+          if (a.parallel_index !== undefined && a.parallel_index !== null) {
+            return Number(a.parallel_index) === tIdx;
           }
           return idx % tracks === tIdx;
         });
