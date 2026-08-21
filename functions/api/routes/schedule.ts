@@ -238,6 +238,53 @@ scheduleRoutes.delete('/schedule/:id', authMiddleware, async (c) => {
     }
 });
 
+scheduleRoutes.post('/schedule/clear-all', authMiddleware, async (c) => {
+    const db = c.env.DB;
+    const user = c.get('user') as UserPayload;
+    const body = await c.req.json<{ period_id: string; career_id?: string }>().catch(() => ({ period_id: '', career_id: undefined }));
+    const period_id = body.period_id || c.req.query('period_id');
+
+    if (!period_id) {
+        return c.json({ error: 'period_id requerido' }, 400);
+    }
+    if (!canMutate(user)) {
+        return c.json({ error: 'No autorizado para realizar modificaciones' }, 403);
+    }
+
+    const targetCareer = user.career_id || body.career_id;
+
+    try {
+        if (targetCareer) {
+            await db.prepare(`
+                DELETE FROM conflicts WHERE assignment_id IN (
+                    SELECT id FROM schedule_assignments WHERE period_id = ? AND career_id = ?
+                )
+            `).bind(period_id, targetCareer).run();
+
+            await db.prepare('DELETE FROM schedule_assignments WHERE period_id = ? AND career_id = ?')
+                .bind(period_id, targetCareer).run();
+
+            await saveScheduleStatus(db, targetCareer, period_id, 'draft', user.id);
+            await recordAudit(db, user, 'CLEAR_ALL', 'schedule', period_id, { career_id: targetCareer }, null);
+        } else {
+            await db.prepare(`
+                DELETE FROM conflicts WHERE assignment_id IN (
+                    SELECT id FROM schedule_assignments WHERE period_id = ?
+                )
+            `).bind(period_id).run();
+
+            await db.prepare('DELETE FROM schedule_assignments WHERE period_id = ?')
+                .bind(period_id).run();
+
+            await recordAudit(db, user, 'CLEAR_ALL', 'schedule', period_id, null, null);
+        }
+
+        return c.json({ success: true, message: 'Todas las asignaciones han sido desasignadas exitosamente' });
+    } catch (error) {
+        return c.json({ error: 'Error al desasignar el horario' }, 500);
+    }
+});
+
 scheduleRoutes.put('/schedule/:id', authMiddleware, async (c) => {
     const user = c.get('user') as UserPayload;
     const id = c.req.param('id') as string;

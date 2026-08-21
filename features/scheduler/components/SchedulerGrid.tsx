@@ -62,7 +62,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
   const [timeScope, setTimeScope] = useState<'week' | 'day'>('week');
   const [selectedDay, setSelectedDay] = useState<number>(1);
   const [density, setDensity] = useState<'normal' | 'compact'>('normal');
-  const [parallelTracks, setParallelTracks] = useState<number>(viewMode === 'nivel' ? 2 : 1);
+  const [parallelTracks, setParallelTracks] = useState<number>(1);
   const [isScrolledDown, setIsScrolledDown] = useState(false);
 
   const gridScrollRef = useRef<HTMLDivElement>(null);

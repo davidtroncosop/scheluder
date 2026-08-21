@@ -94,6 +94,7 @@ const SchedulerPage: React.FC = () => {
 
   // Sidebar & Teacher states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
   const [modalDefaultLevel, setModalDefaultLevel] = useState<number>(1);
   const [modalInitialValues, setModalInitialValues] = useState<Partial<Section> | null>(null);
   const [teachers, setTeachers] = useState<dataStore.ImportedTeacher[]>([]);
@@ -573,6 +574,31 @@ const SchedulerPage: React.FC = () => {
     addAuditEntry('auto-assign', `Generada propuesta automática: ${completed} bloques ubicados`);
   };
 
+  const handleClearAllAssignments = async () => {
+    if (!selectedPeriod) return;
+    setSaving(true);
+    setNotice(null);
+    try {
+      if (dataStore.getAuthToken()) {
+        await api.clearAllAssignments(selectedPeriod);
+        await loadScheduleData();
+      } else {
+        setAssignments([]);
+        setHasChanges(true);
+      }
+      addAuditEntry('clear-all', `Se desasignaron todos los módulos del periodo ${selectedPeriod}`);
+      setNotice({
+        type: 'info',
+        message: 'Todas las asignaciones han sido desasignadas exitosamente. Las secciones están listas en el backlog.',
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al desasignar el horario');
+    } finally {
+      setSaving(false);
+      setShowClearConfirmModal(false);
+    }
+  };
+
   // Edit Assignment Modal handlers
   const handleEditAssignment = (assignment: Assignment) => {
     setEditingAssignment(assignment);
@@ -816,6 +842,8 @@ const SchedulerPage: React.FC = () => {
           onChangeViewTeacher={setSelectedViewTeacher}
           availableTeachers={availableTeachersList}
           onAutoAssign={handleAutoAssign}
+          onClearAll={() => setShowClearConfirmModal(true)}
+          assignedCount={assignments.length}
           onPublish={handlePublish}
           onOpenExport={() => setShowExportModal(true)}
           onOpenAudit={() => setShowAuditPanel(true)}
@@ -946,6 +974,51 @@ const SchedulerPage: React.FC = () => {
           onClose={() => setShowAuditPanel(false)}
           auditLog={auditLog}
         />
+
+        {/* Clear All Confirmation Modal */}
+        {showClearConfirmModal && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="size-12 rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-2xl">delete_sweep</span>
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    ¿Desasignar todo el horario?
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Periodo activo: {periods.find(p => p.id === selectedPeriod)?.name || selectedPeriod}
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700/70">
+                Esta acción removerá todas las <strong>{assignments.length} asignaciones</strong> de la matriz horaria. Todas las secciones volverán al backlog con sus horas requeridas para ser re-planificadas.
+              </p>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowClearConfirmModal(false)}
+                  disabled={saving}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearAllAssignments}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md shadow-rose-600/20 active:scale-95 transition-all cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-base">restart_alt</span>
+                  <span>{saving ? 'Desasignando...' : 'Confirmar y Desasignar'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Real-Time Auto-Assign Optimization Progress Modal */}
         {autoAssignProgress && (

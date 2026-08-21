@@ -393,6 +393,13 @@ class SchedulerAPI {
         return this.unassignSection(assignmentId);
     }
 
+    async clearAllAssignments(periodId: string, careerId?: string): Promise<{ success: boolean; message: string }> {
+        return this.request<{ success: boolean; message: string }>('/schedule/clear-all', {
+            method: 'POST',
+            body: JSON.stringify({ period_id: periodId, career_id: careerId }),
+        });
+    }
+
     async updateAssignment(id: string, changes: Record<string, unknown>): Promise<{ success: boolean }> {
         return this.request(`/schedule/${id}`, { method: 'PUT', body: JSON.stringify(changes) });
     }

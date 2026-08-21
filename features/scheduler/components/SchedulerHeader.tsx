@@ -20,6 +20,8 @@ interface SchedulerHeaderProps {
   onChangeViewTeacher: (teacher: string) => void;
   availableTeachers: string[];
   onAutoAssign: () => void;
+  onClearAll?: () => void;
+  assignedCount?: number;
   onPublish: () => void;
   onOpenExport: () => void;
   onOpenAudit: () => void;
@@ -47,6 +49,8 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
   onChangeViewTeacher,
   availableTeachers,
   onAutoAssign,
+  onClearAll,
+  assignedCount,
   onPublish,
   onOpenExport,
   onOpenAudit,
@@ -211,6 +215,19 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
           <span className="material-symbols-outlined text-[16px] text-amber-300">auto_awesome</span>
           <span>Autollenar</span>
         </button>
+
+        {onClearAll && (
+          <button
+            type="button"
+            onClick={onClearAll}
+            disabled={saving || (assignedCount !== undefined && assignedCount === 0)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/50 rounded-xl shadow-xs transition-all disabled:opacity-40 disabled:pointer-events-none active:scale-95 cursor-pointer"
+            title="Desasignar todos los módulos de la matriz para este periodo"
+          >
+            <span className="material-symbols-outlined text-[16px] text-rose-600 dark:text-rose-400">restart_alt</span>
+            <span>Desasignar todo</span>
+          </button>
+        )}
 
         <button
           type="button"
