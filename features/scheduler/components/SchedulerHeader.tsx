@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from '../../../lib/router';
 import type { AcademicPeriodOption } from '../../../lib/academicPeriods';
 
 interface SchedulerHeaderProps {
@@ -234,6 +235,14 @@ export const SchedulerHeader: React.FC<SchedulerHeaderProps> = ({
         </button>
 
         <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5 hidden sm:block" />
+
+        <Link
+          to="/table-select"
+          className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all flex items-center"
+          title="Importar datos (Catálogos o Tablas intermedias)"
+        >
+          <span className="material-symbols-outlined text-[19px]">upload_file</span>
+        </Link>
 
         <button
           type="button"

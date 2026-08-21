@@ -22,11 +22,16 @@ const SharedHeader: React.FC<SharedHeaderProps> = ({ title }) => {
           </Link>
         </div>
         <div className="flex flex-1 justify-end gap-5 items-center">
-          <nav className="hidden md:flex items-center gap-2">
+          <nav className="hidden md:flex items-center gap-1.5">
             <Link to="/scheduler" className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">Planificador</Link>
+            <Link to="/table-select" className="px-3 py-1.5 rounded-lg text-xs font-bold text-primary hover:bg-primary/10 transition-colors flex items-center gap-1">
+              <span className="material-symbols-outlined text-[15px]">upload_file</span>
+              <span>Importar</span>
+            </Link>
             <Link to="/teachers" className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">Docentes</Link>
             <Link to="/asignaturas" className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">Asignaturas</Link>
             <Link to="/salas" className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">Salas</Link>
+            <Link to="/horarios" className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">Horarios</Link>
           </nav>
           <div className="flex size-8 items-center justify-center rounded-full bg-gradient-to-tr from-primary to-indigo-500 text-white font-bold text-xs shadow-xs">
             U
