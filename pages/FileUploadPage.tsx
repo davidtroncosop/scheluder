@@ -19,7 +19,15 @@ interface UploadResult {
   errors: string[];
 }
 
-const API_BASE = '/api';
+export type ImportDataType = 
+  | 'horarios' 
+  | 'docentes' 
+  | 'asignaturas' 
+  | 'salas' 
+  | 'docentes_asignaturas' 
+  | 'compatibilidad_salas' 
+  | 'prerrequisitos' 
+  | 'disponibilidad_docente';
 
 const FileUploadPage: React.FC = () => {
   const navigate = useNavigate();
@@ -29,7 +37,7 @@ const FileUploadPage: React.FC = () => {
   const [headers, setHeaders] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
-  const [dataType, setDataType] = useState<'horarios' | 'docentes' | 'asignaturas' | 'salas'>('horarios');
+  const [dataType, setDataType] = useState<ImportDataType>('horarios');
   const [dragActive, setDragActive] = useState(false);
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace'); // Reemplazar por defecto
 
@@ -38,6 +46,17 @@ const FileUploadPage: React.FC = () => {
   const [careers, setCareers] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [selectedCareer, setSelectedCareer] = useState(session.getUser()?.career_id || '');
   const isAdmin = session.getUser()?.role === 'admin';
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const typeParam = params.get('type');
+    if (typeParam && [
+      'horarios', 'docentes', 'asignaturas', 'salas',
+      'docentes_asignaturas', 'compatibilidad_salas', 'prerrequisitos', 'disponibilidad_docente'
+    ].includes(typeParam)) {
+      setDataType(typeParam as ImportDataType);
+    }
+  }, []);
 
   useEffect(() => {
     api.getCareers().then(remote => {
@@ -103,11 +122,27 @@ const FileUploadPage: React.FC = () => {
   };
 
   // Required fields by data type
-  const requiredFields: Record<string, string[]> = {
+  const requiredFields: Record<ImportDataType, string[]> = {
     horarios: ['nrc', 'nombre', 'nivel', 'horas'],
     docentes: ['nombre', 'email'],
     asignaturas: ['codigo', 'nombre', 'nivel'],
     salas: ['nombre', 'tipo', 'capacidad'],
+    docentes_asignaturas: ['docente', 'asignatura'],
+    compatibilidad_salas: ['asignatura', 'sala'],
+    prerrequisitos: ['asignatura', 'prerrequisito'],
+    disponibilidad_docente: ['docente', 'dia', 'bloque'],
+  };
+
+  // Endpoint mapping
+  const endpointMap: Record<ImportDataType, string> = {
+    horarios: '/api/import/horarios',
+    docentes: '/api/import/docentes',
+    asignaturas: '/api/import/asignaturas',
+    salas: '/api/import/salas',
+    docentes_asignaturas: '/api/import/docentes-asignaturas',
+    compatibilidad_salas: '/api/import/compatibilidad-salas',
+    prerrequisitos: '/api/import/prerrequisitos',
+    disponibilidad_docente: '/api/import/disponibilidad-docente',
   };
 
   // Validation errors state
@@ -122,23 +157,29 @@ const FileUploadPage: React.FC = () => {
   const validateData = (): boolean => {
     const errors: typeof validationErrors = [];
     const required = requiredFields[dataType] || [];
-    console.log('Validating dataType:', dataType, 'Required fields:', required);
 
     parsedData.forEach((row, index) => {
-      // Check required fields
+      // Check required fields with intelligent alias matching
       required.forEach(field => {
-        // Find the matching header (case insensitive)
-        const matchingHeader = headers.find(h =>
-          h.toLowerCase().includes(field.toLowerCase()) ||
-          field.toLowerCase().includes(h.toLowerCase())
-        );
+        const matchingHeader = headers.find(h => {
+          const norm = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const reqNorm = field.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (norm.includes(reqNorm) || reqNorm.includes(norm)) return true;
+          // Aliases
+          if (field === 'docente' && (norm.includes('rut') || norm.includes('profesor') || norm.includes('prof'))) return true;
+          if (field === 'asignatura' && (norm.includes('codigo') || norm.includes('ramo') || norm.includes('curso'))) return true;
+          if (field === 'sala' && (norm.includes('aula') || norm.includes('espacio'))) return true;
+          if (field === 'prerrequisito' && (norm.includes('prereq') || norm.includes('requisito'))) return true;
+          if (field === 'bloque' && (norm.includes('modulo') || norm.includes('timeslot') || norm.includes('hora'))) return true;
+          return false;
+        });
 
         if (!matchingHeader) {
           errors.push({
-            row: index + 2, // +2 because: 1 for header, 1 for 0-index
+            row: index + 2,
             field: field,
             value: '',
-            error: `Campo requerido "${field}" no encontrado en el archivo`
+            error: `Columna requerida "${field}" no encontrada en el archivo`
           });
         } else if (!row[matchingHeader] || row[matchingHeader].trim() === '') {
           errors.push({
@@ -231,15 +272,16 @@ const FileUploadPage: React.FC = () => {
 
     // Validate first
     if (!validateData()) {
-      return; // Don't upload if there are validation errors
+      return;
     }
+
+    setUploading(true);
 
     // 1. Try to upload to Remote API if authenticated
     const token = dataStore.getAuthToken();
     if (token) {
       try {
-        console.log(`[Upload] Attempting remote upload for ${dataType}...`);
-        const endpoint = `/api/import/${dataType}`;
+        const endpoint = endpointMap[dataType] || `/api/import/${dataType}`;
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
@@ -256,7 +298,18 @@ const FileUploadPage: React.FC = () => {
 
         const remoteResult = await response.json() as any;
         if (response.ok) {
-          console.log('[Upload] Remote upload successful:', remoteResult);
+          const inserted = remoteResult.inserted ?? parsedData.length;
+          setUploadResult({
+            success: true,
+            message: remoteResult.message || `✅ ${inserted} registros importados y sincronizados con éxito`,
+            inserted,
+            errors: remoteResult.errors || [],
+          });
+          setFile(null);
+          setParsedData([]);
+          setHeaders([]);
+          setUploading(false);
+          return;
         } else {
           setUploadResult({
             success: false,
@@ -264,6 +317,7 @@ const FileUploadPage: React.FC = () => {
             inserted: remoteResult.inserted || 0,
             errors: remoteResult.errors || [],
           });
+          setUploading(false);
           return;
         }
       } catch (e) {
@@ -275,6 +329,7 @@ const FileUploadPage: React.FC = () => {
             inserted: 0,
             errors: [e instanceof Error ? e.message : String(e)],
           });
+          setUploading(false);
           return;
         }
       }
@@ -488,31 +543,68 @@ const FileUploadPage: React.FC = () => {
 
             {/* Data Type Selector */}
             <div className={`mb-6 transition-opacity ${selectedPeriod && selectedCareer ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
-                Tipo de datos a importar:
-              </label>
-              <div className="flex flex-wrap gap-3">
-                {[
-                  { id: 'horarios', label: 'Secciones / NRCs', icon: 'format_list_numbered', description: 'Clases a programar' },
-                  { id: 'docentes', label: 'Docentes', icon: 'groups', description: 'Planta académica' },
-                  { id: 'asignaturas', label: 'Asignaturas', icon: 'menu_book', description: 'Catálogo de cursos' },
-                  { id: 'salas', label: 'Salas', icon: 'meeting_room', description: 'Espacios físicos' },
-                ].map(type => (
-                  <button
-                    key={type.id}
-                    onClick={() => { setDataType(type.id as any); setValidationErrors([]); }}
-                    className={`flex flex-col items-start px-4 py-3 rounded-lg font-semibold text-sm transition-all ${dataType === type.id
-                      ? 'bg-primary text-white shadow-lg shadow-primary/20'
-                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-primary'
-                      }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[18px]">{type.icon}</span>
-                      {type.label}
-                    </div>
-                    <span className={`text-[10px] font-medium ${dataType === type.id ? 'text-white/80' : 'text-slate-400'}`}>{type.description}</span>
-                  </button>
-                ))}
+              <div className="flex flex-col gap-4">
+                {/* Main Tables */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm text-primary">folder_open</span>
+                    Tablas Principales / Catálogos Base
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                    {[
+                      { id: 'horarios', label: 'Secciones / NRCs', icon: 'format_list_numbered', description: 'Clases a programar' },
+                      { id: 'docentes', label: 'Docentes', icon: 'groups', description: 'Planta académica' },
+                      { id: 'asignaturas', label: 'Asignaturas', icon: 'menu_book', description: 'Catálogo de cursos' },
+                      { id: 'salas', label: 'Salas', icon: 'meeting_room', description: 'Espacios físicos' },
+                    ].map(type => (
+                      <button
+                        key={type.id}
+                        onClick={() => { setDataType(type.id as any); setValidationErrors([]); setFile(null); setParsedData([]); }}
+                        className={`flex flex-col items-start p-3 rounded-xl font-semibold text-xs transition-all text-left ${dataType === type.id
+                          ? 'bg-primary text-white shadow-md shadow-primary/25 ring-2 ring-primary/40'
+                          : 'bg-white dark:bg-slate-850 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-750 hover:border-primary/50'
+                          }`}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="material-symbols-outlined text-[17px]">{type.icon}</span>
+                          <span className="font-bold">{type.label}</span>
+                        </div>
+                        <span className={`text-[10px] ${dataType === type.id ? 'text-white/80' : 'text-slate-400'}`}>{type.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Relational / Intermediate Tables */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm text-indigo-500">hub</span>
+                    Tablas Intermedias / Relaciones y Restricciones
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                    {[
+                      { id: 'docentes_asignaturas', label: 'Idoneidad Docente', icon: 'badge', description: 'Docente <-> Asignatura' },
+                      { id: 'compatibilidad_salas', label: 'Salas Requeridas', icon: 'domain', description: 'Asignatura <-> Sala' },
+                      { id: 'prerrequisitos', label: 'Prerrequisitos', icon: 'account_tree', description: 'Malla Curricular' },
+                      { id: 'disponibilidad_docente', label: 'Disponibilidad', icon: 'event_available', description: 'Bloqueos y Turnos' },
+                    ].map(type => (
+                      <button
+                        key={type.id}
+                        onClick={() => { setDataType(type.id as any); setValidationErrors([]); setFile(null); setParsedData([]); }}
+                        className={`flex flex-col items-start p-3 rounded-xl font-semibold text-xs transition-all text-left ${dataType === type.id
+                          ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-500/40'
+                          : 'bg-white dark:bg-slate-850 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-750 hover:border-indigo-500/50'
+                          }`}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="material-symbols-outlined text-[17px]">{type.icon}</span>
+                          <span className="font-bold">{type.label}</span>
+                        </div>
+                        <span className={`text-[10px] ${dataType === type.id ? 'text-white/80' : 'text-slate-400'}`}>{type.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -545,8 +637,8 @@ const FileUploadPage: React.FC = () => {
               </div>
               <p className="text-xs text-slate-500 mt-2">
                 {importMode === 'replace'
-                  ? '⚠️ Los datos actuales serán reemplazados completamente por el nuevo archivo'
-                  : 'Los nuevos datos se agregarán a los existentes (duplicados se actualizarán)'
+                  ? '⚠️ Los datos actuales de esta tabla serán reemplazados completamente por el nuevo archivo'
+                  : 'Los nuevos datos se agregarán a los existentes (los duplicados se actualizarán)'
                 }
               </p>
             </div>
@@ -558,7 +650,16 @@ const FileUploadPage: React.FC = () => {
                   <span className="material-symbols-outlined text-blue-500 text-xl">info</span>
                   <div className="flex-1">
                     <h4 className="text-sm font-bold text-blue-800 dark:text-blue-300 mb-2">
-                      Estructura esperada para: {dataType === 'horarios' ? 'Secciones / NRCs (clases a programar)' : dataType === 'docentes' ? 'Docentes' : dataType === 'asignaturas' ? 'Asignaturas' : 'Salas'}
+                      Estructura esperada para: {
+                        dataType === 'horarios' ? 'Secciones / NRCs (clases a programar)' :
+                        dataType === 'docentes' ? 'Docentes' :
+                        dataType === 'asignaturas' ? 'Asignaturas' :
+                        dataType === 'salas' ? 'Salas' :
+                        dataType === 'docentes_asignaturas' ? 'Idoneidad Docente (Docente - Asignatura)' :
+                        dataType === 'compatibilidad_salas' ? 'Compatibilidad de Salas (Asignatura - Sala)' :
+                        dataType === 'prerrequisitos' ? 'Prerrequisitos Curriculares (Malla)' :
+                        'Disponibilidad y Bloqueos de Docentes'
+                      }
                     </h4>
 
                     {/* Columns info */}
@@ -568,7 +669,7 @@ const FileUploadPage: React.FC = () => {
                         {dataType === 'horarios' && ['nrc', 'codigo', 'nombre', 'nivel', 'horas'].map(col => (
                           <span key={col} className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-bold rounded">{col}</span>
                         ))}
-                        {dataType === 'docentes' && ['nombre', 'email', 'max_horas'].map(col => (
+                        {dataType === 'docentes' && ['rut', 'nombre', 'email', 'max_horas'].map(col => (
                           <span key={col} className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-bold rounded">{col}</span>
                         ))}
                         {dataType === 'asignaturas' && ['codigo', 'nombre', 'nivel'].map(col => (
@@ -576,6 +677,18 @@ const FileUploadPage: React.FC = () => {
                         ))}
                         {dataType === 'salas' && ['nombre', 'tipo', 'capacidad'].map(col => (
                           <span key={col} className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-bold rounded">{col}</span>
+                        ))}
+                        {dataType === 'docentes_asignaturas' && ['rut_docente', 'codigo_asignatura', 'prioridad'].map(col => (
+                          <span key={col} className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold rounded">{col}</span>
+                        ))}
+                        {dataType === 'compatibilidad_salas' && ['codigo_asignatura', 'nombre_sala', 'requisito'].map(col => (
+                          <span key={col} className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold rounded">{col}</span>
+                        ))}
+                        {dataType === 'prerrequisitos' && ['codigo_asignatura', 'codigo_prerrequisito', 'tipo'].map(col => (
+                          <span key={col} className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold rounded">{col}</span>
+                        ))}
+                        {dataType === 'disponibilidad_docente' && ['rut_docente', 'dia', 'bloque', 'estado'].map(col => (
+                          <span key={col} className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold rounded">{col}</span>
                         ))}
                       </div>
                     </div>
@@ -586,13 +699,25 @@ const FileUploadPage: React.FC = () => {
                         {dataType === 'horarios' && ['seccion', 'estudiantes', 'tipo', 'docente', 'nrc_teorico', 'sala_preferida'].map(col => (
                           <span key={col} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-medium rounded">{col}</span>
                         ))}
-                        {dataType === 'docentes' && ['departamento', 'tipo_contrato', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes'].map(col => (
+                        {dataType === 'docentes' && ['departamento', 'tipo_contrato'].map(col => (
                           <span key={col} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-medium rounded">{col}</span>
                         ))}
                         {dataType === 'asignaturas' && ['creditos', 'carrera'].map(col => (
                           <span key={col} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-medium rounded">{col}</span>
                         ))}
-                        {dataType === 'salas' && ['edificio', 'asignaturas_permitidas'].map(col => (
+                        {dataType === 'salas' && ['edificio', 'piso', 'compartida'].map(col => (
+                          <span key={col} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-medium rounded">{col}</span>
+                        ))}
+                        {dataType === 'docentes_asignaturas' && ['nombre_docente', 'nombre_asignatura', 'max_secciones'].map(col => (
+                          <span key={col} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-medium rounded">{col}</span>
+                        ))}
+                        {dataType === 'compatibilidad_salas' && ['nombre_asignatura'].map(col => (
+                          <span key={col} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-medium rounded">{col}</span>
+                        ))}
+                        {dataType === 'prerrequisitos' && ['nombre_asignatura', 'nombre_prerrequisito'].map(col => (
+                          <span key={col} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-medium rounded">{col}</span>
+                        ))}
+                        {dataType === 'disponibilidad_docente' && ['nombre_docente'].map(col => (
                           <span key={col} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-medium rounded">{col}</span>
                         ))}
                       </div>
@@ -600,21 +725,33 @@ const FileUploadPage: React.FC = () => {
 
                     {/* Example preview */}
                     <div className="bg-white dark:bg-slate-800 rounded-lg p-2 mb-3 overflow-x-auto">
-                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Ejemplo:</p>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Ejemplo de archivo:</p>
                       <code className="text-[10px] text-slate-700 dark:text-slate-300 whitespace-pre font-mono">
                         {dataType === 'horarios' && `nrc,codigo,nombre,nivel,horas,tipo,seccion,estudiantes,docente,nrc_teorico,sala_preferida
 10001,DMOR0030,Morfología Teoría,3,2,TEO,1,60,Prof. José Reyes,,
 10002,DMOR0030,Morfología Lab Sec 1,3,2,LAB,1,20,Prof. José Reyes,10001,LAB 1
 10003,DMOR0030,Morfología Lab Sec 2,3,2,LAB,2,20,Ayud. Felipe Pérez,10001,LAB 2`}
-                        {dataType === 'docentes' && `nombre,email,max_horas,lunes,martes,miercoles,jueves,viernes
-Prof. José Reyes,jose.reyes@universidad.cl,20,"M1,M2,M3,M4","M1,M2,M3","M1,M2,M3,M4","M1,M2","M1,M2"
-Dra. María Rivas,maria.rivas@universidad.cl,16,"M1,M2","M1,M2,M3,M4","M1,M2","M1,M2,M3,M4",`}
+                        {dataType === 'docentes' && `rut,nombre,email,max_horas,departamento,tipo_contrato
+12345678-9,Prof. José Reyes,jose.reyes@universidad.cl,20,Salud,Planta
+98765432-1,Dra. María Rivas,maria.rivas@universidad.cl,16,Salud,Planta`}
                         {dataType === 'asignaturas' && `codigo,nombre,nivel,creditos,carrera
-DMOR0030,Morfología,3,6,Mi Carrera
-DBIO0031,Biomecánica I,3,4,Mi Carrera`}
-                        {dataType === 'salas' && `nombre,tipo,capacidad,edificio,asignaturas_permitidas
-SALA 201,TEO,40,Edificio D,
-LAB 1,LAB,20,Edificio D,"DMOR0030,DFIS0032"`}
+DMOR0030,Morfología,3,6,Kinesiología
+DBIO0031,Biomecánica I,3,4,Kinesiología`}
+                        {dataType === 'salas' && `nombre,tipo,capacidad,edificio,piso,compartida
+SALA 201,TEO,40,Edificio D,2,No
+LAB 1,LAB,20,Edificio D,1,No`}
+                        {dataType === 'docentes_asignaturas' && `rut_docente,nombre_docente,codigo_asignatura,prioridad,max_secciones
+12345678-9,Prof. José Reyes,DMOR0030,1,4
+98765432-1,Dra. María Rivas,DMOR0030,2,2`}
+                        {dataType === 'compatibilidad_salas' && `codigo_asignatura,nombre_sala,requisito
+DMOR0030,LAB 1,EXCLUSIVE
+DFIS0032,SIMULADOR 1,PREFERRED`}
+                        {dataType === 'prerrequisitos' && `codigo_asignatura,codigo_prerrequisito,tipo
+DBIO0031,DMOR0030,MANDATORY
+DFIS0032,DMOR0030,MANDATORY`}
+                        {dataType === 'disponibilidad_docente' && `rut_docente,dia,bloque,estado
+12345678-9,1,M1,available
+12345678-9,5,T4,blocked`}
                       </code>
                     </div>
 
@@ -627,19 +764,37 @@ LAB 1,LAB,20,Edificio D,"DMOR0030,DFIS0032"`}
 10002,DMOR0030,Morfología Lab Sec 1,3,2,LAB,1,20,Prof. José Reyes,10001,LAB 1
 10003,DMOR0030,Morfología Lab Sec 2,3,2,LAB,2,20,Ayud. Felipe Pérez,10001,LAB 2
 10004,DMOR0030,Morfología Lab Sec 3,3,2,LAB,3,20,Dra. María Rivas,10001,LAB 1`,
-                          docentes: `nombre,email,max_horas,departamento,tipo_contrato,lunes,martes,miercoles,jueves,viernes
-Prof. José Reyes,jose.reyes@universidad.cl,20,Mi Carrera,Planta,"M1,M2,M3,M4","M1,M2,M3","M1,M2,M3,M4","M1,M2","M1,M2"
-Dra. María Rivas,maria.rivas@universidad.cl,16,Mi Carrera,Planta,"M1,M2","M1,M2,M3,M4","M1,M2","M1,M2,M3,M4",
-Prof. Carlos Soto,carlos.soto@universidad.cl,10,Mi Carrera,Media Jornada,"M1,M2","M1,M2","M1,M2","M1,M2",`,
+                          docentes: `rut,nombre,email,max_horas,departamento,tipo_contrato
+12345678-9,Prof. José Reyes,jose.reyes@universidad.cl,20,Salud,Planta
+98765432-1,Dra. María Rivas,maria.rivas@universidad.cl,16,Salud,Planta
+11223344-5,Prof. Carlos Soto,carlos.soto@universidad.cl,10,Salud,Media Jornada`,
                           asignaturas: `codigo,nombre,nivel,creditos,carrera
-DMOR0030,Morfología,3,6,Mi Carrera
-DBIO0031,Biomecánica I,3,4,Mi Carrera
-DFIS0032,Fisiología I,3,6,Mi Carrera`,
-                          salas: `nombre,tipo,capacidad,edificio,asignaturas_permitidas
-SALA 201,TEO,40,Edificio D,
-SALA 202,TEO,40,Edificio D,
-LAB 1,LAB,20,Edificio D,"DMOR0030,DFIS0032"
-SIMULADOR 1,SIM,15,Edificio D,"DKIN0051,DKIN0052"`
+DMOR0030,Morfología,3,6,Kinesiología
+DBIO0031,Biomecánica I,3,4,Kinesiología
+DFIS0032,Fisiología I,3,6,Kinesiología`,
+                          salas: `nombre,tipo,capacidad,edificio,piso,compartida
+SALA 201,TEO,40,Edificio D,2,No
+SALA 202,TEO,40,Edificio D,2,No
+LAB 1,LAB,20,Edificio D,1,No
+SIMULADOR 1,SIM,15,Edificio D,1,No`,
+                          docentes_asignaturas: `rut_docente,nombre_docente,codigo_asignatura,nombre_asignatura,prioridad,max_secciones
+12345678-9,Prof. José Reyes,DMOR0030,Morfología,1,4
+98765432-1,Dra. María Rivas,DMOR0030,Morfología,2,2
+12345678-9,Prof. José Reyes,DFIS0032,Fisiología I,1,3`,
+                          compatibilidad_salas: `codigo_asignatura,nombre_asignatura,nombre_sala,requisito
+DMOR0030,Morfología,LAB 1,EXCLUSIVE
+DBIO0031,Biomecánica I,LAB 2,PREFERRED
+DFIS0032,Fisiología I,SIMULADOR 1,EXCLUSIVE`,
+                          prerrequisitos: `codigo_asignatura,nombre_asignatura,codigo_prerrequisito,nombre_prerrequisito,tipo
+DBIO0031,Biomecánica I,DMOR0030,Morfología,MANDATORY
+DFIS0032,Fisiología I,DMOR0030,Morfología,MANDATORY
+DKIN0051,Clínica I,DFIS0032,Fisiología I,MANDATORY`,
+                          disponibilidad_docente: `rut_docente,nombre_docente,dia,bloque,estado
+12345678-9,Prof. José Reyes,1,M1,available
+12345678-9,Prof. José Reyes,1,M2,available
+12345678-9,Prof. José Reyes,5,T3,blocked
+12345678-9,Prof. José Reyes,5,T4,blocked
+98765432-1,Dra. María Rivas,2,M1,preference`,
                         };
                         const blob = new Blob([examples[dataType]], { type: 'text/csv;charset=utf-8;' });
                         const link = document.createElement('a');
@@ -647,7 +802,7 @@ SIMULADOR 1,SIM,15,Edificio D,"DKIN0051,DKIN0052"`
                         link.download = `plantilla_${dataType}.csv`;
                         link.click();
                       }}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-blue-500 text-white text-xs font-bold rounded-lg hover:bg-blue-600 transition-colors"
+                      className="btn-primary !text-xs !py-1.5 !px-3"
                     >
                       <span className="material-symbols-outlined text-[16px]">download</span>
                       Descargar plantilla CSV

@@ -251,6 +251,55 @@ class SchedulerAPI {
         });
     }
 
+    async importTeachers(data: Array<Record<string, string>>, careerId: string, importMode: 'replace' | 'merge'): Promise<{ success: boolean; inserted: number; errors: string[] }> {
+        return this.request('/import/docentes', {
+            method: 'POST',
+            body: JSON.stringify({ data, career_id: careerId, import_mode: importMode }),
+        });
+    }
+
+    async importSubjects(data: Array<Record<string, string>>, careerId: string): Promise<{ success: boolean; inserted: number; errors: string[] }> {
+        return this.request('/import/asignaturas', {
+            method: 'POST',
+            body: JSON.stringify({ data, career_id: careerId }),
+        });
+    }
+
+    async importRooms(data: Array<Record<string, string>>, careerId: string, importMode: 'replace' | 'merge'): Promise<{ success: boolean; inserted: number; errors: string[] }> {
+        return this.request('/import/salas', {
+            method: 'POST',
+            body: JSON.stringify({ data, career_id: careerId, import_mode: importMode }),
+        });
+    }
+
+    async importTeacherSubjects(data: Array<Record<string, string>>, careerId: string, importMode: 'replace' | 'merge'): Promise<{ success: boolean; inserted: number; skipped?: number; message?: string; errors?: string[] }> {
+        return this.request('/import/docentes-asignaturas', {
+            method: 'POST',
+            body: JSON.stringify({ data, career_id: careerId, import_mode: importMode }),
+        });
+    }
+
+    async importSubjectRooms(data: Array<Record<string, string>>, careerId: string, importMode: 'replace' | 'merge'): Promise<{ success: boolean; inserted: number; skipped?: number; message?: string; errors?: string[] }> {
+        return this.request('/import/compatibilidad-salas', {
+            method: 'POST',
+            body: JSON.stringify({ data, career_id: careerId, import_mode: importMode }),
+        });
+    }
+
+    async importSubjectPrerequisites(data: Array<Record<string, string>>, careerId: string, importMode: 'replace' | 'merge'): Promise<{ success: boolean; inserted: number; skipped?: number; message?: string; errors?: string[] }> {
+        return this.request('/import/prerrequisitos', {
+            method: 'POST',
+            body: JSON.stringify({ data, career_id: careerId, import_mode: importMode }),
+        });
+    }
+
+    async importTeacherAvailability(data: Array<Record<string, string>>, careerId: string, importMode: 'replace' | 'merge'): Promise<{ success: boolean; inserted: number; skipped?: number; message?: string; errors?: string[] }> {
+        return this.request('/import/disponibilidad-docente', {
+            method: 'POST',
+            body: JSON.stringify({ data, career_id: careerId, import_mode: importMode }),
+        });
+    }
+
     async getUnassignedSections(): Promise<SectionWithDetails[]> {
         return this.getSections(false);
     }

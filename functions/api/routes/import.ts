@@ -315,6 +315,337 @@ importRoutes.post('/import/horarios', authMiddleware, async (c) => {
     }
 });
 
+// Import Relational: Teacher-Subjects (Idoneidad Docente)
+importRoutes.post('/import/docentes-asignaturas', authMiddleware, async (c) => {
+    const db = c.env.DB;
+    const user = c.get('user') as UserPayload;
+    if (!canMutate(user)) return c.json({ error: 'No autorizado' }, 403);
+    const rateLimited = await requireExpensiveRequestBudget(c, user);
+    if (rateLimited) return rateLimited;
+    const { data, career_id, import_mode } = await c.req.json();
+
+    if (!data || !Array.isArray(data)) {
+        return c.json({ error: 'Datos inválidos' }, 400);
+    }
+
+    const targetCareerId = user.role === 'admin' && career_id ? career_id : user.career_id;
+    if (!targetCareerId) {
+        return c.json({ error: 'Career ID requerido' }, 400);
+    }
+
+    const [teacherRows, subjectRows] = await Promise.all([
+        db.prepare('SELECT id, rut, name FROM teachers WHERE career_id = ?').bind(targetCareerId).all(),
+        db.prepare('SELECT id, code, name FROM subjects WHERE career_id = ?').bind(targetCareerId).all(),
+    ]);
+
+    const teacherMap = new Map<string, string>();
+    for (const t of teacherRows.results as any[]) {
+        if (t.rut) teacherMap.set(String(t.rut).trim().toUpperCase(), t.id);
+        if (t.name) teacherMap.set(String(t.name).trim().toUpperCase(), t.id);
+    }
+
+    const subjectMap = new Map<string, string>();
+    for (const s of subjectRows.results as any[]) {
+        if (s.code) subjectMap.set(String(s.code).trim().toUpperCase(), s.id);
+        if (s.name) subjectMap.set(String(s.name).trim().toUpperCase(), s.id);
+    }
+
+    const statements: D1PreparedStatement[] = [];
+    let matched = 0;
+    let skipped = 0;
+
+    for (const row of data as Record<string, string>[]) {
+        const teacherKey = String(row.RUT || row.rut || row.Docente || row.docente || row.Profesor || row.profesor || '').trim().toUpperCase();
+        const subjectKey = String(row.Codigo || row.codigo || row.Asignatura || row.asignatura || row.Ramo || row.ramo || '').trim().toUpperCase();
+
+        const teacherId = teacherMap.get(teacherKey);
+        const subjectId = subjectMap.get(subjectKey);
+
+        if (!teacherId || !subjectId) {
+            skipped++;
+            continue;
+        }
+
+        const rawPriority = parseInt(row.Prioridad || row.prioridad || row.Orden || row.orden || '1');
+        const priority = isNaN(rawPriority) || rawPriority < 1 ? 1 : rawPriority;
+        const maxSections = parseInt(row.Max_Secciones || row.max_secciones || row['Max Secciones'] || '4') || 4;
+
+        statements.push(db.prepare(`
+            INSERT INTO teacher_subjects (teacher_id, subject_id, priority, max_sections)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(teacher_id, subject_id) DO UPDATE SET
+                priority = excluded.priority,
+                max_sections = excluded.max_sections
+        `).bind(teacherId, subjectId, priority, maxSections));
+        matched++;
+    }
+
+    if (statements.length === 0) {
+        return c.json({ error: 'No se encontraron coincidencias válidas entre docentes y asignaturas' }, 400);
+    }
+
+    if (import_mode === 'replace') {
+        statements.unshift(db.prepare(`
+            DELETE FROM teacher_subjects WHERE subject_id IN (SELECT id FROM subjects WHERE career_id = ?)
+        `).bind(targetCareerId));
+    }
+
+    try {
+        await db.batch(statements);
+        return c.json({ success: true, inserted: matched, skipped, message: `${matched} relaciones de idoneidad docente importadas con éxito.` });
+    } catch (error) {
+        return c.json({ error: 'Error al importar idoneidad docente', details: error instanceof Error ? error.message : String(error) }, 400);
+    }
+});
+
+// Import Relational: Subject-Room Compatibilities (Compatibilidad Salas)
+importRoutes.post('/import/compatibilidad-salas', authMiddleware, async (c) => {
+    const db = c.env.DB;
+    const user = c.get('user') as UserPayload;
+    if (!canMutate(user)) return c.json({ error: 'No autorizado' }, 403);
+    const rateLimited = await requireExpensiveRequestBudget(c, user);
+    if (rateLimited) return rateLimited;
+    const { data, career_id, import_mode } = await c.req.json();
+
+    if (!data || !Array.isArray(data)) {
+        return c.json({ error: 'Datos inválidos' }, 400);
+    }
+
+    const targetCareerId = user.role === 'admin' && career_id ? career_id : user.career_id;
+    if (!targetCareerId) {
+        return c.json({ error: 'Career ID requerido' }, 400);
+    }
+
+    const [subjectRows, roomRows] = await Promise.all([
+        db.prepare('SELECT id, code, name FROM subjects WHERE career_id = ?').bind(targetCareerId).all(),
+        db.prepare('SELECT id, name FROM rooms WHERE is_active = 1 AND (career_id = ? OR is_shared = 1)').bind(targetCareerId).all(),
+    ]);
+
+    const subjectMap = new Map<string, string>();
+    for (const s of subjectRows.results as any[]) {
+        if (s.code) subjectMap.set(String(s.code).trim().toUpperCase(), s.id);
+        if (s.name) subjectMap.set(String(s.name).trim().toUpperCase(), s.id);
+    }
+
+    const roomMap = new Map<string, string>();
+    for (const r of roomRows.results as any[]) {
+        if (r.name) roomMap.set(String(r.name).trim().toUpperCase(), r.id);
+    }
+
+    const statements: D1PreparedStatement[] = [];
+    let matched = 0;
+    let skipped = 0;
+
+    for (const row of data as Record<string, string>[]) {
+        const subjectKey = String(row.Codigo || row.codigo || row.Asignatura || row.asignatura || '').trim().toUpperCase();
+        const roomKey = String(row.Sala || row.sala || row.Nombre_Sala || row['Nombre Sala'] || '').trim().toUpperCase();
+
+        const subjectId = subjectMap.get(subjectKey);
+        const roomId = roomMap.get(roomKey);
+
+        if (!subjectId || !roomId) {
+            skipped++;
+            continue;
+        }
+
+        const rawReq = String(row.Requisito || row.requisito || row.Tipo || row.tipo || row.Nivel_Requisito || 'ALLOWED').trim().toUpperCase();
+        let requirementLevel: 'EXCLUSIVE' | 'PREFERRED' | 'ALLOWED' = 'ALLOWED';
+        if (rawReq.includes('EXCLUSIV') || rawReq === 'EXCLUSIVE') requirementLevel = 'EXCLUSIVE';
+        else if (rawReq.includes('PREFEREN') || rawReq === 'PREFERRED') requirementLevel = 'PREFERRED';
+
+        statements.push(db.prepare(`
+            INSERT INTO subject_room_compatibilities (subject_id, room_id, requirement_level)
+            VALUES (?, ?, ?)
+            ON CONFLICT(subject_id, room_id) DO UPDATE SET
+                requirement_level = excluded.requirement_level
+        `).bind(subjectId, roomId, requirementLevel));
+        matched++;
+    }
+
+    if (statements.length === 0) {
+        return c.json({ error: 'No se encontraron coincidencias válidas entre asignaturas y salas' }, 400);
+    }
+
+    if (import_mode === 'replace') {
+        statements.unshift(db.prepare(`
+            DELETE FROM subject_room_compatibilities WHERE subject_id IN (SELECT id FROM subjects WHERE career_id = ?)
+        `).bind(targetCareerId));
+    }
+
+    try {
+        await db.batch(statements);
+        return c.json({ success: true, inserted: matched, skipped, message: `${matched} compatibilidades de sala importadas con éxito.` });
+    } catch (error) {
+        return c.json({ error: 'Error al importar compatibilidades de sala', details: error instanceof Error ? error.message : String(error) }, 400);
+    }
+});
+
+// Import Relational: Subject Prerequisites (Malla / Prerrequisitos)
+importRoutes.post('/import/prerrequisitos', authMiddleware, async (c) => {
+    const db = c.env.DB;
+    const user = c.get('user') as UserPayload;
+    if (!canMutate(user)) return c.json({ error: 'No autorizado' }, 403);
+    const rateLimited = await requireExpensiveRequestBudget(c, user);
+    if (rateLimited) return rateLimited;
+    const { data, career_id, import_mode } = await c.req.json();
+
+    if (!data || !Array.isArray(data)) {
+        return c.json({ error: 'Datos inválidos' }, 400);
+    }
+
+    const targetCareerId = user.role === 'admin' && career_id ? career_id : user.career_id;
+    if (!targetCareerId) {
+        return c.json({ error: 'Career ID requerido' }, 400);
+    }
+
+    const subjectRows = await db.prepare('SELECT id, code, name FROM subjects WHERE career_id = ?').bind(targetCareerId).all();
+    const subjectMap = new Map<string, string>();
+    for (const s of subjectRows.results as any[]) {
+        if (s.code) subjectMap.set(String(s.code).trim().toUpperCase(), s.id);
+        if (s.name) subjectMap.set(String(s.name).trim().toUpperCase(), s.id);
+    }
+
+    const statements: D1PreparedStatement[] = [];
+    let matched = 0;
+    let skipped = 0;
+
+    for (const row of data as Record<string, string>[]) {
+        const subjectKey = String(row.Codigo || row.codigo || row.Asignatura || row.asignatura || '').trim().toUpperCase();
+        const prereqKey = String(row.Prerrequisito || row.prerrequisito || row.Codigo_Prerrequisito || row['Codigo Prerrequisito'] || '').trim().toUpperCase();
+
+        const subjectId = subjectMap.get(subjectKey);
+        const prerequisiteId = subjectMap.get(prereqKey);
+
+        if (!subjectId || !prerequisiteId || subjectId === prerequisiteId) {
+            skipped++;
+            continue;
+        }
+
+        const rawType = String(row.Tipo || row.tipo || row.Tipo_Prerrequisito || 'MANDATORY').trim().toUpperCase();
+        let type: 'MANDATORY' | 'COREQUISITE' | 'RECOMMENDED' = 'MANDATORY';
+        if (rawType.includes('CORREQ') || rawType === 'COREQUISITE') type = 'COREQUISITE';
+        else if (rawType.includes('RECOMEND') || rawType === 'RECOMMENDED') type = 'RECOMMENDED';
+
+        statements.push(db.prepare(`
+            INSERT INTO subject_prerequisites (subject_id, prerequisite_id, type)
+            VALUES (?, ?, ?)
+            ON CONFLICT(subject_id, prerequisite_id) DO UPDATE SET
+                type = excluded.type
+        `).bind(subjectId, prerequisiteId, type));
+        matched++;
+    }
+
+    if (statements.length === 0) {
+        return c.json({ error: 'No se encontraron coincidencias válidas entre asignaturas y prerrequisitos' }, 400);
+    }
+
+    if (import_mode === 'replace') {
+        statements.unshift(db.prepare(`
+            DELETE FROM subject_prerequisites WHERE subject_id IN (SELECT id FROM subjects WHERE career_id = ?)
+        `).bind(targetCareerId));
+    }
+
+    try {
+        await db.batch(statements);
+        return c.json({ success: true, inserted: matched, skipped, message: `${matched} prerrequisitos curriculares importados con éxito.` });
+    } catch (error) {
+        return c.json({ error: 'Error al importar prerrequisitos', details: error instanceof Error ? error.message : String(error) }, 400);
+    }
+});
+
+// Import Relational: Teacher Availability (Disponibilidad y Bloqueos)
+importRoutes.post('/import/disponibilidad-docente', authMiddleware, async (c) => {
+    const db = c.env.DB;
+    const user = c.get('user') as UserPayload;
+    if (!canMutate(user)) return c.json({ error: 'No autorizado' }, 403);
+    const rateLimited = await requireExpensiveRequestBudget(c, user);
+    if (rateLimited) return rateLimited;
+    const { data, career_id, import_mode } = await c.req.json();
+
+    if (!data || !Array.isArray(data)) {
+        return c.json({ error: 'Datos inválidos' }, 400);
+    }
+
+    const targetCareerId = user.role === 'admin' && career_id ? career_id : user.career_id;
+    if (!targetCareerId) {
+        return c.json({ error: 'Career ID requerido' }, 400);
+    }
+
+    const [teacherRows, timeslotRows] = await Promise.all([
+        db.prepare('SELECT id, rut, name FROM teachers WHERE career_id = ?').bind(targetCareerId).all(),
+        db.prepare('SELECT id, label, order_index FROM timeslots ORDER BY order_index').all(),
+    ]);
+
+    const teacherMap = new Map<string, string>();
+    for (const t of teacherRows.results as any[]) {
+        if (t.rut) teacherMap.set(String(t.rut).trim().toUpperCase(), t.id);
+        if (t.name) teacherMap.set(String(t.name).trim().toUpperCase(), t.id);
+    }
+
+    const timeslotMap = new Map<string, string>();
+    for (const ts of timeslotRows.results as any[]) {
+        timeslotMap.set(String(ts.label).trim().toUpperCase(), ts.id);
+        timeslotMap.set(String(ts.order_index), ts.id);
+    }
+
+    const parseDay = (dayRaw: string): number => {
+        const d = String(dayRaw).trim().toLowerCase();
+        if (d.startsWith('lu') || d === '1') return 1;
+        if (d.startsWith('ma') || d === '2') return 2;
+        if (d.startsWith('mi') || d === '3') return 3;
+        if (d.startsWith('ju') || d === '4') return 4;
+        if (d.startsWith('vi') || d === '5') return 5;
+        return 1;
+    };
+
+    const statements: D1PreparedStatement[] = [];
+    let matched = 0;
+    let skipped = 0;
+
+    for (const row of data as Record<string, string>[]) {
+        const teacherKey = String(row.RUT || row.rut || row.Docente || row.docente || row.Profesor || '').trim().toUpperCase();
+        const teacherId = teacherMap.get(teacherKey);
+        const slotKey = String(row.Bloque || row.bloque || row.Modulo || row.modulo || row.Timeslot || 'M1').trim().toUpperCase();
+        const timeslotId = timeslotMap.get(slotKey) || (timeslotRows.results[0] as any)?.id;
+        const dayOfWeek = parseDay(row.Dia || row.dia || row.Dia_Semana || row['Dia Semana'] || '1');
+
+        if (!teacherId || !timeslotId) {
+            skipped++;
+            continue;
+        }
+
+        const rawStatus = String(row.Estado || row.estado || row.Status || row.status || 'available').trim().toLowerCase();
+        let status: 'available' | 'preference' | 'blocked' = 'available';
+        if (rawStatus.includes('bloq') || rawStatus === 'blocked') status = 'blocked';
+        else if (rawStatus.includes('pref') || rawStatus === 'preference') status = 'preference';
+
+        statements.push(db.prepare(`
+            INSERT INTO teacher_availability (id, teacher_id, timeslot_id, day_of_week, status)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(teacher_id, timeslot_id, day_of_week) DO UPDATE SET
+                status = excluded.status
+        `).bind(`tav-${crypto.randomUUID().slice(0, 8)}`, teacherId, timeslotId, dayOfWeek, status));
+        matched++;
+    }
+
+    if (statements.length === 0) {
+        return c.json({ error: 'No se encontraron coincidencias válidas de disponibilidad docente' }, 400);
+    }
+
+    if (import_mode === 'replace') {
+        statements.unshift(db.prepare(`
+            DELETE FROM teacher_availability WHERE teacher_id IN (SELECT id FROM teachers WHERE career_id = ?)
+        `).bind(targetCareerId));
+    }
+
+    try {
+        await db.batch(statements);
+        return c.json({ success: true, inserted: matched, skipped, message: `${matched} registros de disponibilidad y bloqueos importados con éxito.` });
+    } catch (error) {
+        return c.json({ error: 'Error al importar disponibilidad docente', details: error instanceof Error ? error.message : String(error) }, 400);
+    }
+});
+
 // Analyze Mapping
 importRoutes.post('/import/analyze-mapping', authMiddleware, async (c) => {
     const user = c.get('user');
