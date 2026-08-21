@@ -24,6 +24,7 @@ conflictRoutes.get('/conflicts', authMiddleware, async (c) => {
     SELECT 
       c.*,
       sa.day_of_week,
+      sa.parallel_index,
       ts.label as timeslot_label,
       sub.name as subject_name,
       sec.nrc,

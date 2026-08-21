@@ -126,7 +126,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
   };
 
   // Calculate compatibility & feasibility heatmap for a slot when a section is targeted (dragged or active)
-  const getSlotCompatibility = (dayOfWeek: number, timeslotId: string) => {
+  const getSlotCompatibility = (dayOfWeek: number, timeslotId: string, parallelIndex = 0) => {
     if (!targetSection) return null;
 
     // 1. Check Teacher Conflict & Availability
@@ -161,7 +161,22 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
       }
     }
 
-    // 2. Check Level Clash (Tope de Nivel) - Up to 3 parallel sections allowed per level
+    // 2. Check Level Clash (Tope de Nivel)
+    // Rule A: Two classes of the same level in the SAME section track cannot overlap
+    const sameSectionAssigned = assignments.find(
+      a => a.day_of_week === dayOfWeek &&
+           a.timeslot_id === timeslotId &&
+           Number(a.level) === Number(targetSection.level) &&
+           (a.parallel_index ?? 0) === parallelIndex &&
+           a.section_id !== targetSection.id
+    );
+
+    let levelSectionConflict: string | null = null;
+    if (sameSectionAssigned) {
+      levelSectionConflict = `Tope Nivel ${targetSection.level} (Sec. ${parallelIndex + 1}): ${sameSectionAssigned.subject_name || 'NRC ' + sameSectionAssigned.nrc} ya asignada`;
+    }
+
+    // Rule B: Maximum 3 parallel sections allowed per level in a single timeslot
     const sameLevelAssigned = assignments.filter(
       a => a.day_of_week === dayOfWeek &&
            a.timeslot_id === timeslotId &&
@@ -235,7 +250,18 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
       };
     }
 
-    // Critical: Level Clash
+    // Critical: Level Section Clash (same level in same section)
+    if (levelSectionConflict) {
+      return {
+        type: 'CRITICAL' as const,
+        label: levelSectionConflict,
+        tag: `Tope Sec. ${parallelIndex + 1}`,
+        bg: 'bg-rose-500/15 border-rose-400 text-rose-800 dark:text-rose-300 dark:bg-rose-950/40',
+        dot: 'bg-rose-500',
+      };
+    }
+
+    // Critical: Level Clash (too many parallel sections)
     if (levelClash) {
       return {
         type: 'CRITICAL' as const,
@@ -766,7 +792,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                     >
                       {Array.from({ length: effectiveTracks }).map((_, pIdx) => {
                         const isTrackTarget = dropTarget?.timeslotId === slot.id && dropTarget?.dayOfWeek === dayOfWeek && (dropTarget?.parallelIndex ?? 0) === pIdx;
-                        const compatibility = getSlotCompatibility(dayOfWeek, slot.id);
+                        const compatibility = getSlotCompatibility(dayOfWeek, slot.id, pIdx);
 
                         const trackAssignments = cellAssignments.filter((a, idx) => {
                           if (a.parallel_index !== undefined && a.parallel_index !== null) {

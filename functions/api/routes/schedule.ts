@@ -175,6 +175,7 @@ scheduleRoutes.post('/schedule/assign', authMiddleware, async (c) => {
             day_of_week,
             career_id: targetCareerId,
             period_id,
+            parallel_index: parallel_index || 0,
         });
 
         const criticalConflicts = conflicts.filter(c => c.type === 'CRITICAL');
@@ -275,6 +276,7 @@ scheduleRoutes.put('/schedule/:id', authMiddleware, async (c) => {
         day_of_week: dayOfWeek,
         career_id: assignment.career_id,
         period_id: assignment.period_id,
+        parallel_index: body.parallel_index !== undefined ? Number(body.parallel_index) : ((assignment as any).parallel_index ?? 0),
         exclude_assignment_id: id,
         teacher_id_override: teacherId,
     });

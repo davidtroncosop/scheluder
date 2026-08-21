@@ -131,6 +131,7 @@ export async function validateAssignment(db: D1Database, params: {
     day_of_week: number;
     career_id: string;
     period_id: string;
+    parallel_index?: number;
     exclude_assignment_id?: string;
     teacher_id_override?: string | null;
 }) {
@@ -196,7 +197,7 @@ export async function validateAssignment(db: D1Database, params: {
     }
 
     const simultaneousResult = await db.prepare(`
-    SELECT sa.id, sec.id AS section_id, sec.parent_section_id, sec.nrc, sub.name AS subject_name, sub.level, sub.career_id
+    SELECT sa.id, sa.parallel_index, sec.id AS section_id, sec.parent_section_id, sec.section_code, sec.nrc, sub.name AS subject_name, sub.level, sub.career_id
     FROM schedule_assignments sa
     JOIN sections sec ON sec.id = sa.section_id AND sec.period_id = sa.period_id
     JOIN subjects sub ON sub.id = sec.subject_id
@@ -204,7 +205,14 @@ export async function validateAssignment(db: D1Database, params: {
       AND (? IS NULL OR sa.id <> ?)
   `).bind(params.period_id, params.timeslot_id, params.day_of_week, excludedId, excludedId).all();
     const simultaneous = simultaneousResult.results as any[];
-    const currentRelationship: SectionRelationshipIdentity = { id: section.id, parent_section_id: section.parent_section_id };
+    const targetParallelIndex = params.parallel_index !== undefined && params.parallel_index !== null ? Number(params.parallel_index) : 0;
+    const currentRelationship: SectionRelationshipIdentity = { 
+        id: section.id, 
+        parent_section_id: section.parent_section_id,
+        section_code: section.section_code,
+        parallel_index: targetParallelIndex,
+    };
+    
     const parentChildConflict = simultaneous.find(row => areDirectParentAndChild(
         currentRelationship,
         { id: row.section_id, parent_section_id: row.parent_section_id },
@@ -218,10 +226,25 @@ export async function validateAssignment(db: D1Database, params: {
         });
     }
 
+    const sameSectionConflict = simultaneous.find(row => (
+        row.level === section.level &&
+        row.career_id === section.career_id &&
+        Number(row.parallel_index ?? 0) === targetParallelIndex &&
+        shouldApplyLevelClash(currentRelationship, { id: row.section_id, parent_section_id: row.parent_section_id, parallel_index: row.parallel_index })
+    ));
+
+    if (sameSectionConflict) {
+        conflicts.push({
+            type: 'CRITICAL',
+            rule_code: 'LEVEL_SECTION_CLASH',
+            description: `Tope de horario en Nivel ${section.level} (Sección ${targetParallelIndex + 1}): Ya existe una clase asignada (${sameSectionConflict.subject_name}, NRC ${sameSectionConflict.nrc}) en este módulo. Para programar otra clase simultánea debe asignarse en una sección distinta (ej. Sección ${targetParallelIndex === 0 ? 2 : 1}).`,
+        });
+    }
+
     const sameLevelAssigned = simultaneous.filter(row => (
         row.level === section.level &&
         row.career_id === section.career_id &&
-        shouldApplyLevelClash(currentRelationship, { id: row.section_id, parent_section_id: row.parent_section_id })
+        shouldApplyLevelClash(currentRelationship, { id: row.section_id, parent_section_id: row.parent_section_id, parallel_index: row.parallel_index })
     ));
 
     const MAX_CONCURRENT_SECTIONS_PER_LEVEL = 3;
