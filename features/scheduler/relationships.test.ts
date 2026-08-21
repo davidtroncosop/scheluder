@@ -29,14 +29,14 @@ describe('section parent-child relationships', () => {
   });
 
   it('detects collision when two sections of the same level share the same parallel section track', () => {
-    const sec1A = { id: 'math-1', parallel_index: 0 };
-    const sec1B = { id: 'chem-1', parallel_index: 0 };
-    const sec2 = { id: 'math-2', parallel_index: 1 };
+    const sec1A = { id: 'math-1', section_code: 'S1', parallel_index: 0 };
+    const sec1B = { id: 'chem-1', section_code: 'S1', parallel_index: 0 };
+    const sec2 = { id: 'math-2', section_code: 'S2', parallel_index: 1 };
 
-    // Same section track (Sec 1 vs Sec 1) -> Collision!
+    // Same section track (S1 vs S1) -> Collision!
     expect(areInSameLevelSectionTrack(sec1A, sec1B)).toBe(true);
 
-    // Different section tracks (Sec 1 vs Sec 2) -> Permitted in parallel!
+    // Different section tracks (S1 vs S2) -> Permitted in parallel!
     expect(areInSameLevelSectionTrack(sec1A, sec2)).toBe(false);
   });
 });

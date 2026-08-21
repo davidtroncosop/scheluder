@@ -163,17 +163,30 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
 
     // 2. Check Level Clash (Tope de Nivel)
     // Rule A: Two classes of the same level in the SAME section track cannot overlap
+    const parseSecNum = (code?: string | number | null, fallbackIdx = 0): number => {
+      if (code !== undefined && code !== null && String(code).trim() !== '') {
+        const match = String(code).match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (num >= 1) return num;
+        }
+      }
+      return Number(fallbackIdx) + 1;
+    };
+
+    const targetSecNum = parseSecNum(targetSection.section_code, parallelIndex);
+
     const sameSectionAssigned = assignments.find(
       a => a.day_of_week === dayOfWeek &&
            a.timeslot_id === timeslotId &&
            Number(a.level) === Number(targetSection.level) &&
-           (a.parallel_index ?? 0) === parallelIndex &&
+           parseSecNum(a.section_code, a.parallel_index) === targetSecNum &&
            a.section_id !== targetSection.id
     );
 
     let levelSectionConflict: string | null = null;
     if (sameSectionAssigned) {
-      levelSectionConflict = `Tope Nivel ${targetSection.level} (Sec. ${parallelIndex + 1}): ${sameSectionAssigned.subject_name || 'NRC ' + sameSectionAssigned.nrc} ya asignada`;
+      levelSectionConflict = `Tope Nivel ${targetSection.level} (Sección ${targetSecNum}): ${sameSectionAssigned.subject_name || 'NRC ' + sameSectionAssigned.nrc} ya asignada`;
     }
 
     // Rule B: Maximum 3 parallel sections allowed per level in a single timeslot

@@ -226,18 +226,30 @@ export async function validateAssignment(db: D1Database, params: {
         });
     }
 
-    const sameSectionConflict = simultaneous.find(row => (
-        row.level === section.level &&
-        row.career_id === section.career_id &&
-        Number(row.parallel_index ?? 0) === targetParallelIndex &&
-        shouldApplyLevelClash(currentRelationship, { id: row.section_id, parent_section_id: row.parent_section_id, parallel_index: row.parallel_index })
-    ));
+    const parseSecNum = (code?: string | number | null, fallbackIdx = 0): number => {
+        if (code !== undefined && code !== null && String(code).trim() !== '') {
+            const match = String(code).match(/\d+/);
+            if (match) {
+                const num = parseInt(match[0], 10);
+                if (num >= 1) return num;
+            }
+        }
+        return Number(fallbackIdx) + 1;
+    };
+
+    const targetSecNum = parseSecNum(section.section_code, targetParallelIndex);
+
+    const sameSectionConflict = simultaneous.find(row => {
+        if (row.level !== section.level || row.career_id !== section.career_id) return false;
+        const rowSecNum = parseSecNum(row.section_code, row.parallel_index);
+        return rowSecNum === targetSecNum && shouldApplyLevelClash(currentRelationship, { id: row.section_id, parent_section_id: row.parent_section_id, parallel_index: row.parallel_index });
+    });
 
     if (sameSectionConflict) {
         conflicts.push({
             type: 'CRITICAL',
             rule_code: 'LEVEL_SECTION_CLASH',
-            description: `Tope de horario en Nivel ${section.level} (Sección ${targetParallelIndex + 1}): Ya existe una clase asignada (${sameSectionConflict.subject_name}, NRC ${sameSectionConflict.nrc}) en este módulo. Para programar otra clase simultánea debe asignarse en una sección distinta (ej. Sección ${targetParallelIndex === 0 ? 2 : 1}).`,
+            description: `Tope de horario en Nivel ${section.level} (Sección ${targetSecNum}): Ya existe una clase asignada (${sameSectionConflict.subject_name}, NRC ${sameSectionConflict.nrc}) en este módulo. No pueden haber dos asignaturas de la Sección ${targetSecNum} en el mismo bloque horario (deben pertenecer a secciones distintas).`,
         });
     }
 
