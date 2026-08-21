@@ -57,10 +57,10 @@ export const SchedulerStats: React.FC<SchedulerStatsProps> = ({
           </span>
         </div>
 
-        {/* Section Compactness / Ventanas Metric */}
+        {/* Level Compactness / Ventanas Metric */}
         {assignments.length > 0 && (
           <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-500 dark:text-slate-400">Ventanas por Sección:</span>
+            <span className="font-bold text-slate-500 dark:text-slate-400">Ventanas por Nivel:</span>
             <span
               className={`px-2.5 py-0.5 rounded-full font-black border flex items-center gap-1 ${
                 sectionVentanas.total_ventanas === 0
@@ -69,7 +69,7 @@ export const SchedulerStats: React.FC<SchedulerStatsProps> = ({
                   ? 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30'
                   : 'text-rose-600 dark:text-rose-400 bg-rose-500/10 border-rose-500/30'
               }`}
-              title={`${sectionVentanas.total_ventanas} módulo(s) libre(s) detectado(s) entre clases de la misma sección`}
+              title={`${sectionVentanas.total_ventanas} módulo(s) libre(s) detectado(s) entre clases del mismo nivel`}
             >
               <span className="material-symbols-outlined text-[14px]">
                 {sectionVentanas.total_ventanas === 0 ? 'space_dashboard' : 'view_week'}

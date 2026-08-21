@@ -130,23 +130,25 @@ export const calculateHealth = (
   };
 };
 
-export interface SectionVentanaSummary {
+export interface LevelVentanaSummary {
   total_ventanas: number;
   compactness_percentage: number;
   days_with_ventanas: number;
-  total_section_days: number;
+  total_level_days: number;
 }
 
-export const calculateSectionVentanas = (
+export type SectionVentanaSummary = LevelVentanaSummary;
+
+export const calculateLevelVentanas = (
   assignments: SchedulerAssignment[],
   timeslotOrderMap?: Record<string, number>,
-): SectionVentanaSummary => {
+): LevelVentanaSummary => {
   if (!assignments || assignments.length === 0) {
     return {
       total_ventanas: 0,
       compactness_percentage: 100,
       days_with_ventanas: 0,
-      total_section_days: 0,
+      total_level_days: 0,
     };
   }
 
@@ -158,22 +160,25 @@ export const calculateSectionVentanas = (
     return match ? parseInt(match[0], 10) : 1;
   };
 
-  // Group by cohort: level + parallel_index + day_of_week
+  // Group by Level Cohort: level + day_of_week
   const groups = new Map<string, number[]>();
   assignments.forEach(a => {
-    const key = `${a.level || 1}-${a.parallel_index ?? 0}-${a.day_of_week}`;
+    const key = `${a.level || 1}-${a.day_of_week}`;
     const order = defaultOrder(a.timeslot_id, a.timeslot_label);
     const existing = groups.get(key) || [];
-    existing.push(order);
+    // Only add unique order indices per day for the level
+    if (!existing.includes(order)) {
+      existing.push(order);
+    }
     groups.set(key, existing);
   });
 
   let totalVentanas = 0;
   let daysWithVentanas = 0;
-  let totalSectionDays = 0;
+  let totalLevelDays = 0;
 
   groups.forEach(orders => {
-    totalSectionDays++;
+    totalLevelDays++;
     if (orders.length > 1) {
       const sorted = [...orders].sort((a, b) => a - b);
       const span = sorted[sorted.length - 1] - sorted[0] + 1;
@@ -185,15 +190,18 @@ export const calculateSectionVentanas = (
     }
   });
 
-  const compactness = totalSectionDays > 0
-    ? Math.max(0, Math.min(100, Math.round(((totalSectionDays - daysWithVentanas) / totalSectionDays) * 100)))
+  const compactness = totalLevelDays > 0
+    ? Math.max(0, Math.min(100, Math.round(((totalLevelDays - daysWithVentanas) / totalLevelDays) * 100)))
     : 100;
 
   return {
     total_ventanas: totalVentanas,
     compactness_percentage: compactness,
     days_with_ventanas: daysWithVentanas,
-    total_section_days: totalSectionDays,
+    total_level_days: totalLevelDays,
   };
 };
+
+export const calculateSectionVentanas = calculateLevelVentanas;
+
 

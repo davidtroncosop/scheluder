@@ -463,53 +463,51 @@ export async function calculateSlotScore(db: D1Database, params: {
         }
     }
 
-    // Section Track Window Minimization
-    const targetParallel = (params as any).parallel_index !== undefined ? Number((params as any).parallel_index) : 0;
-    const sameSectionRows = await db.prepare(`
+    // Level Window Minimization (Nivel)
+    const sameLevelRows = await db.prepare(`
         SELECT ts.order_index
         FROM schedule_assignments sa
         JOIN sections sec ON sec.id = sa.section_id AND sec.period_id = sa.period_id
         JOIN subjects sub ON sub.id = sec.subject_id
         JOIN timeslots ts ON ts.id = sa.timeslot_id
         WHERE sub.level = ? AND sub.career_id = ? AND sa.period_id = ? AND sa.day_of_week = ?
-          AND COALESCE(sa.parallel_index, 0) = ? AND sa.section_id <> ?
+          AND sa.section_id <> ?
     `).bind(
         params.section.level,
         params.section.career_id,
         params.period_id,
         params.day_of_week,
-        targetParallel,
         params.section.id
     ).all();
 
-    const sectionOrders = (sameSectionRows.results as any[]).map(r => Number(r.order_index));
-    if (sectionOrders.length > 0) {
-        const minDistance = Math.min(...sectionOrders.map(o => Math.abs(o - params.timeslot.order_index)));
-        const minOrder = Math.min(...sectionOrders);
-        const maxOrder = Math.max(...sectionOrders);
+    const levelOrders = (sameLevelRows.results as any[]).map(r => Number(r.order_index));
+    if (levelOrders.length > 0) {
+        const minDistance = Math.min(...levelOrders.map(o => Math.abs(o - params.timeslot.order_index)));
+        const minOrder = Math.min(...levelOrders);
+        const maxOrder = Math.max(...levelOrders);
 
         if (minDistance === 1) {
             const isBridging = params.timeslot.order_index > minOrder && params.timeslot.order_index < maxOrder;
             if (isBridging) {
                 total += 55;
-                breakdown.push({ rule: `Cierra ventana intermedia en Sección ${targetParallel + 1}`, points: 55 });
+                breakdown.push({ rule: `Cierra ventana intermedia en Nivel ${params.section.level}`, points: 55 });
             } else {
                 total += 45;
-                breakdown.push({ rule: `Clase contigua en Sección ${targetParallel + 1} (0 ventanas)`, points: 45 });
+                breakdown.push({ rule: `Clase contigua en Nivel ${params.section.level} (0 ventanas)`, points: 45 });
             }
         } else {
             const gap = minDistance - 1;
             const penalty = gap === 1 ? -40 : gap === 2 ? -70 : -100;
             total += penalty;
-            breakdown.push({ rule: `Ventana de ${gap} módulo(s) en Sección ${targetParallel + 1}`, points: penalty });
+            breakdown.push({ rule: `Ventana de ${gap} módulo(s) en Nivel ${params.section.level}`, points: penalty });
         }
     } else {
         if (params.timeslot.order_index === 1 || params.timeslot.order_index === 2) {
             total += 20;
-            breakdown.push({ rule: `Inicio de bloque matutino compacto (Sección ${targetParallel + 1})`, points: 20 });
+            breakdown.push({ rule: `Inicio de bloque matutino compacto (Nivel ${params.section.level})`, points: 20 });
         } else if (params.timeslot.order_index === 5) {
             total += 15;
-            breakdown.push({ rule: `Inicio bloque tarde (Sección ${targetParallel + 1})`, points: 15 });
+            breakdown.push({ rule: `Inicio bloque tarde (Nivel ${params.section.level})`, points: 15 });
         }
     }
 

@@ -419,55 +419,54 @@ scheduleRoutes.get('/schedule/score', authMiddleware, async (c) => {
                 let score = 100;
                 const breakdown: Array<{ rule: string; points: number }> = [];
 
-                // 1. PRIMARY OBJECTIVE FUNCTION: Minimize gaps / ventanas at the Section Cohort level
-                const sectionTrackRows = rows.filter(row =>
+                // 1. PRIMARY OBJECTIVE FUNCTION: Minimize gaps / ventanas at the Level Cohort (Nivel)
+                const sameLevelRows = rows.filter(row =>
                     row.level === section.level &&
                     row.career_id === section.career_id &&
-                    Number(row.parallel_index ?? 0) === nextParallelIndex &&
                     row.day_of_week === day &&
                     row.section_id !== section.id
                 );
 
-                const sectionOrders = sectionTrackRows
+                const levelOrders = sameLevelRows
                     .map(row => orderById.get(row.timeslot_id) as number)
                     .filter(order => order !== undefined);
 
-                if (sectionOrders.length > 0) {
-                    const minDistance = Math.min(...sectionOrders.map(o => Math.abs(o - ts.order_index)));
-                    const minOrder = Math.min(...sectionOrders);
-                    const maxOrder = Math.max(...sectionOrders);
+                if (levelOrders.length > 0) {
+                    const minDistance = Math.min(...levelOrders.map(o => Math.abs(o - ts.order_index)));
+                    const minOrder = Math.min(...levelOrders);
+                    const maxOrder = Math.max(...levelOrders);
 
                     if (minDistance === 1) {
-                        // Immediately adjacent -> 0 gaps/ventanas
+                        // Immediately adjacent -> 0 gaps/ventanas in Level
                         const isBridging = ts.order_index > minOrder && ts.order_index < maxOrder;
                         if (isBridging) {
                             score += 55;
-                            breakdown.push({ rule: `Cierra ventana intermedia en Sección ${nextParallelIndex + 1} (bloque compacto)`, points: 55 });
+                            breakdown.push({ rule: `Cierra ventana intermedia en Nivel ${section.level} (bloque compacto)`, points: 55 });
                         } else {
                             score += 45;
-                            breakdown.push({ rule: `Clase contigua en Sección ${nextParallelIndex + 1} (0 ventanas)`, points: 45 });
+                            breakdown.push({ rule: `Clase contigua en Nivel ${section.level} (0 ventanas)`, points: 45 });
                         }
                     } else {
-                        // Creates an unwanted gap/ventana in the section's day
+                        // Creates an unwanted gap/ventana in this Level's day
                         const gap = minDistance - 1;
                         const penalty = gap === 1 ? -40 : gap === 2 ? -70 : -100;
                         score += penalty;
                         breakdown.push({
-                            rule: `Ventana de ${gap} módulo(s) libre(s) en Sección ${nextParallelIndex + 1}`,
+                            rule: `Ventana de ${gap} módulo(s) libre(s) en Nivel ${section.level}`,
                             points: penalty,
                         });
                     }
                 } else {
-                    // First class of the day for this section track: reward standard compact cluster starts
+                    // First class of the day for this Level: reward standard compact cluster starts
                     if (ts.order_index === 1 || ts.order_index === 2) {
                         score += 20;
-                        breakdown.push({ rule: `Inicio de bloque matutino compacto (Sección ${nextParallelIndex + 1})`, points: 20 });
+                        breakdown.push({ rule: `Inicio de bloque matutino compacto (Nivel ${section.level})`, points: 20 });
                     } else if (ts.order_index === 5) {
                         score += 15;
-                        breakdown.push({ rule: `Inicio de bloque vespertino compacto (Sección ${nextParallelIndex + 1})`, points: 15 });
+                        breakdown.push({ rule: `Inicio de bloque vespertino compacto (Nivel ${section.level})`, points: 15 });
                     } else if (ts.order_index >= 3 && ts.order_index <= 4) {
                         score -= 10;
-                        breakdown.push({ rule: `Módulo intermedio aislado (puede inducir ventanas)`, points: -10 });
+                        breakdown.push({ rule: `Módulo intermedio aislado en Nivel ${section.level}`, points: -10 });
                     }
                 }
 
