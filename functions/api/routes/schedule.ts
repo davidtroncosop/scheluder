@@ -334,7 +334,7 @@ scheduleRoutes.get('/schedule/score', authMiddleware, async (c) => {
     WHERE is_active = 1 AND (is_shared = 1 OR career_id = ?)
   `).bind(section.career_id).all();
 
-    const assignments = await db.prepare(`SELECT sa.room_id, sa.timeslot_id, sa.day_of_week,
+    const assignments = await db.prepare(`SELECT sa.id, sa.room_id, sa.timeslot_id, sa.day_of_week, sa.parallel_index,
         sec.id AS section_id, sec.parent_section_id, sec.teacher_id, sub.level, sub.career_id
         FROM schedule_assignments sa
         JOIN sections sec ON sec.id = sa.section_id AND sec.period_id = sa.period_id
@@ -419,37 +419,96 @@ scheduleRoutes.get('/schedule/score', authMiddleware, async (c) => {
                 let score = 100;
                 const breakdown: Array<{ rule: string; points: number }> = [];
 
-                // 1. Room Type match
-                if (section.type === room.type) {
-                    score += 30;
-                    breakdown.push({ rule: 'Tipo de sala exacto', points: 30 });
-                }
-
-                // 2. Preferred Room designated for this subject
-                if (preferredRoomIds.has(room.id)) {
-                    score += 25;
-                    breakdown.push({ rule: 'Sala preferente para la asignatura', points: 25 });
-                }
-
-                // 3. Teacher Preference
-                if (preferred.has(slotKey)) {
-                    score += 20;
-                    breakdown.push({ rule: 'Preferencia horaria del docente', points: 20 });
-                }
-
-                // 4. Consecutive/Adjacent class with same level (reduces empty gaps)
-                const adjacent = rows.some(row =>
+                // 1. PRIMARY OBJECTIVE FUNCTION: Minimize gaps / ventanas at the Section Cohort level
+                const sectionTrackRows = rows.filter(row =>
                     row.level === section.level &&
                     row.career_id === section.career_id &&
+                    Number(row.parallel_index ?? 0) === nextParallelIndex &&
                     row.day_of_week === day &&
-                    Math.abs((orderById.get(row.timeslot_id) as number) - ts.order_index) === 1
+                    row.section_id !== section.id
                 );
-                if (adjacent) {
-                    score += 20;
-                    breakdown.push({ rule: 'Horario contiguo con mismo nivel', points: 20 });
+
+                const sectionOrders = sectionTrackRows
+                    .map(row => orderById.get(row.timeslot_id) as number)
+                    .filter(order => order !== undefined);
+
+                if (sectionOrders.length > 0) {
+                    const minDistance = Math.min(...sectionOrders.map(o => Math.abs(o - ts.order_index)));
+                    const minOrder = Math.min(...sectionOrders);
+                    const maxOrder = Math.max(...sectionOrders);
+
+                    if (minDistance === 1) {
+                        // Immediately adjacent -> 0 gaps/ventanas
+                        const isBridging = ts.order_index > minOrder && ts.order_index < maxOrder;
+                        if (isBridging) {
+                            score += 55;
+                            breakdown.push({ rule: `Cierra ventana intermedia en Sección ${nextParallelIndex + 1} (bloque compacto)`, points: 55 });
+                        } else {
+                            score += 45;
+                            breakdown.push({ rule: `Clase contigua en Sección ${nextParallelIndex + 1} (0 ventanas)`, points: 45 });
+                        }
+                    } else {
+                        // Creates an unwanted gap/ventana in the section's day
+                        const gap = minDistance - 1;
+                        const penalty = gap === 1 ? -40 : gap === 2 ? -70 : -100;
+                        score += penalty;
+                        breakdown.push({
+                            rule: `Ventana de ${gap} módulo(s) libre(s) en Sección ${nextParallelIndex + 1}`,
+                            points: penalty,
+                        });
+                    }
+                } else {
+                    // First class of the day for this section track: reward standard compact cluster starts
+                    if (ts.order_index === 1 || ts.order_index === 2) {
+                        score += 20;
+                        breakdown.push({ rule: `Inicio de bloque matutino compacto (Sección ${nextParallelIndex + 1})`, points: 20 });
+                    } else if (ts.order_index === 5) {
+                        score += 15;
+                        breakdown.push({ rule: `Inicio de bloque vespertino compacto (Sección ${nextParallelIndex + 1})`, points: 15 });
+                    } else if (ts.order_index >= 3 && ts.order_index <= 4) {
+                        score -= 10;
+                        breakdown.push({ rule: `Módulo intermedio aislado (puede inducir ventanas)`, points: -10 });
+                    }
                 }
 
-                // 5. Optimal Capacity fit bonus / penalty
+                // 2. SECONDARY OBJECTIVE: Minimize Teacher Windows & Honor Preferences
+                if (section.teacher_id) {
+                    const teacherOrders = rows
+                        .filter(row => row.teacher_id === section.teacher_id && row.day_of_week === day && row.section_id !== section.id)
+                        .map(row => orderById.get(row.timeslot_id) as number)
+                        .filter(order => order !== undefined);
+
+                    if (teacherOrders.length > 0) {
+                        const minTeacherDist = Math.min(...teacherOrders.map(o => Math.abs(o - ts.order_index)));
+                        if (minTeacherDist === 1) {
+                            score += 25;
+                            breakdown.push({ rule: 'Clase consecutiva para el docente (reduce ventanas)', points: 25 });
+                        } else {
+                            const teacherGap = minTeacherDist - 1;
+                            const teacherPenalty = Math.min(45, teacherGap * 20);
+                            score -= teacherPenalty;
+                            breakdown.push({ rule: `Ventana de ${teacherGap} módulo(s) para el docente`, points: -teacherPenalty });
+                        }
+                    }
+
+                    if (preferred.has(slotKey)) {
+                        score += 20;
+                        breakdown.push({ rule: 'Preferencia horaria del docente', points: 20 });
+                    }
+                }
+
+                // 3. Room Infrastructure Match
+                if (section.type === room.type) {
+                    score += 25;
+                    breakdown.push({ rule: 'Tipo de sala exacto', points: 25 });
+                }
+
+                if (preferredRoomIds.has(room.id)) {
+                    score += 20;
+                    breakdown.push({ rule: 'Sala preferente para la asignatura', points: 20 });
+                }
+
+                // 4. Optimal Capacity fit bonus / penalty
                 if (section.expected_students > 0) {
                     const ratio = room.capacity / section.expected_students;
                     if (ratio >= 1.0 && ratio <= 1.35) {
@@ -461,7 +520,7 @@ scheduleRoutes.get('/schedule/score', authMiddleware, async (c) => {
                     }
                 }
 
-                // 6. Friday late afternoon penalty
+                // 5. Friday late afternoon penalty
                 if (day === 5 && ts.order_index >= 6) {
                     score -= 15;
                     breakdown.push({ rule: 'Viernes último módulo', points: -15 });

@@ -829,6 +829,7 @@ const SchedulerPage: React.FC = () => {
         <SchedulerStats
           metrics={metrics}
           conflicts={conflicts}
+          assignments={assignments}
           onOpenConflictsPanel={() => setShowConflictsPanel(true)}
         />
 

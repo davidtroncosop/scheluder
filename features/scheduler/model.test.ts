@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateHealth, mapBackendAssignments, type SchedulerSection } from './model';
+import { calculateHealth, calculateSectionVentanas, mapBackendAssignments, type SchedulerSection } from './model';
 
 describe('scheduler model', () => {
   it('assigns deterministic parallel columns per slot', () => {
@@ -20,4 +20,29 @@ describe('scheduler model', () => {
     const conflicts = [{ id: 'c', type: 'CRITICAL', rule_code: 'X', description: '', subject_name: '', nrc: '', teacher_name: null, timeslot_label: 'M1', day_of_week: 1, parallel_index: 0 }];
     expect(calculateHealth([section], assignments, conflicts).health_score).toBe(35);
   });
+
+  it('calculates zero ventanas for contiguous classes in the same section track', () => {
+    const assignments = mapBackendAssignments([
+      { id: '1', section_id: '1', nrc: '101', subject_name: 'A', subject_code: 'A', level: 1, timeslot_id: 'm1', timeslot_label: 'M1', day_of_week: 1, parallel_index: 0 },
+      { id: '2', section_id: '2', nrc: '102', subject_name: 'B', subject_code: 'B', level: 1, timeslot_id: 'm2', timeslot_label: 'M2', day_of_week: 1, parallel_index: 0 },
+      { id: '3', section_id: '3', nrc: '103', subject_name: 'C', subject_code: 'C', level: 1, timeslot_id: 'm3', timeslot_label: 'M3', day_of_week: 1, parallel_index: 0 },
+    ]);
+    const summary = calculateSectionVentanas(assignments, { m1: 1, m2: 2, m3: 3, m4: 4 });
+    expect(summary.total_ventanas).toBe(0);
+    expect(summary.compactness_percentage).toBe(100);
+    expect(summary.days_with_ventanas).toBe(0);
+  });
+
+  it('detects and counts section ventanas when classes are non-contiguous', () => {
+    const assignments = mapBackendAssignments([
+      { id: '1', section_id: '1', nrc: '101', subject_name: 'A', subject_code: 'A', level: 1, timeslot_id: 'm1', timeslot_label: 'M1', day_of_week: 1, parallel_index: 0 },
+      // M2 is empty -> 1 ventana
+      { id: '2', section_id: '2', nrc: '102', subject_name: 'B', subject_code: 'B', level: 1, timeslot_id: 'm3', timeslot_label: 'M3', day_of_week: 1, parallel_index: 0 },
+    ]);
+    const summary = calculateSectionVentanas(assignments, { m1: 1, m2: 2, m3: 3, m4: 4 });
+    expect(summary.total_ventanas).toBe(1);
+    expect(summary.days_with_ventanas).toBe(1);
+    expect(summary.compactness_percentage).toBe(0);
+  });
 });
+

@@ -129,3 +129,71 @@ export const calculateHealth = (
     health_score: Math.max(0, Math.min(100, percentage - critical * 15 - warnings * 5)),
   };
 };
+
+export interface SectionVentanaSummary {
+  total_ventanas: number;
+  compactness_percentage: number;
+  days_with_ventanas: number;
+  total_section_days: number;
+}
+
+export const calculateSectionVentanas = (
+  assignments: SchedulerAssignment[],
+  timeslotOrderMap?: Record<string, number>,
+): SectionVentanaSummary => {
+  if (!assignments || assignments.length === 0) {
+    return {
+      total_ventanas: 0,
+      compactness_percentage: 100,
+      days_with_ventanas: 0,
+      total_section_days: 0,
+    };
+  }
+
+  const defaultOrder = (id: string, label?: string): number => {
+    if (timeslotOrderMap && timeslotOrderMap[id] !== undefined) {
+      return timeslotOrderMap[id];
+    }
+    const match = (label || id).match(/\d+/);
+    return match ? parseInt(match[0], 10) : 1;
+  };
+
+  // Group by cohort: level + parallel_index + day_of_week
+  const groups = new Map<string, number[]>();
+  assignments.forEach(a => {
+    const key = `${a.level || 1}-${a.parallel_index ?? 0}-${a.day_of_week}`;
+    const order = defaultOrder(a.timeslot_id, a.timeslot_label);
+    const existing = groups.get(key) || [];
+    existing.push(order);
+    groups.set(key, existing);
+  });
+
+  let totalVentanas = 0;
+  let daysWithVentanas = 0;
+  let totalSectionDays = 0;
+
+  groups.forEach(orders => {
+    totalSectionDays++;
+    if (orders.length > 1) {
+      const sorted = [...orders].sort((a, b) => a - b);
+      const span = sorted[sorted.length - 1] - sorted[0] + 1;
+      const emptySlots = Math.max(0, span - sorted.length);
+      if (emptySlots > 0) {
+        totalVentanas += emptySlots;
+        daysWithVentanas++;
+      }
+    }
+  });
+
+  const compactness = totalSectionDays > 0
+    ? Math.max(0, Math.min(100, Math.round(((totalSectionDays - daysWithVentanas) / totalSectionDays) * 100)))
+    : 100;
+
+  return {
+    total_ventanas: totalVentanas,
+    compactness_percentage: compactness,
+    days_with_ventanas: daysWithVentanas,
+    total_section_days: totalSectionDays,
+  };
+};
+
