@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import type {
   SchedulerAssignment as Assignment,
   SchedulerConflict as Conflict,
@@ -353,6 +353,31 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
     ? [1, 2, 3, 4, 5] 
     : [selectedDay];
 
+  // Auto-detect maximum simultaneous / parallel modules in the active level view
+  const maxParallelInCurrentView = useMemo(() => {
+    if (viewMode !== 'nivel') return 1;
+    let max = 1;
+    sortedTimeslots.forEach(ts => {
+      activeDays.forEach(day => {
+        const cell = filteredAssignments.filter(a => a.day_of_week === day && a.timeslot_id === ts.id);
+        if (cell.length > 1) {
+          max = Math.max(max, cell.length);
+        }
+        cell.forEach(a => {
+          if (a.parallel_index !== undefined && a.parallel_index !== null) {
+            max = Math.max(max, Number(a.parallel_index) + 1);
+          }
+        });
+      });
+    });
+    return Math.min(3, max);
+  }, [viewMode, filteredAssignments, sortedTimeslots, activeDays]);
+
+  const effectiveParallelTracks = useMemo(() => {
+    if (viewMode !== 'nivel') return 1;
+    return Math.max(parallelTracks, maxParallelInCurrentView);
+  }, [viewMode, parallelTracks, maxParallelInCurrentView]);
+
   // Compatible rooms for the active section
   const targetSecType = (targetSection?.type || 'TEO').toUpperCase();
   const compatibleRoomsForTarget = availableRooms.filter(r => {
@@ -433,7 +458,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                     type="button"
                     onClick={() => setParallelTracks(count)}
                     className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${
-                      parallelTracks === count
+                      effectiveParallelTracks === count
                         ? 'bg-primary text-white shadow-xs'
                         : 'text-slate-600 dark:text-slate-300 hover:text-primary'
                     }`}
@@ -592,7 +617,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
           </div>
           {activeDays.map((dayOfWeek) => {
             const dayName = dayNames[dayOfWeek - 1];
-            const effectiveTracks = viewMode === 'nivel' ? parallelTracks : 1;
+            const effectiveTracks = viewMode === 'nivel' ? effectiveParallelTracks : 1;
 
             return (
               <div
@@ -650,7 +675,7 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                 {/* Days Columns */}
                 {activeDays.map((dayOfWeek) => {
                   const cellAssignments = getCellAssignments(dayOfWeek, slot.id);
-                  const effectiveTracks = viewMode === 'nivel' ? parallelTracks : 1;
+                  const effectiveTracks = viewMode === 'nivel' ? effectiveParallelTracks : 1;
 
                   if (effectiveTracks === 1) {
                     const isTarget = dropTarget?.timeslotId === slot.id && dropTarget?.dayOfWeek === dayOfWeek;
@@ -713,6 +738,9 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-bold text-xs text-slate-900 dark:text-white leading-tight">
                                       {assignment.subject_name || assignment.subject_code}
+                                    </span>
+                                    <span className="px-1 py-0.2 rounded text-[8px] font-black uppercase bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                      {assignment.section_code ? (assignment.section_code.startsWith('SEC') ? assignment.section_code : `Sec ${assignment.section_code}`) : `Sec ${(assignment.parallel_index ?? 0) + 1}`}
                                     </span>
                                     <span className={`px-1.5 py-0.2 rounded text-[9px] uppercase border ${getTypeStyle(assignment.section_type)}`}>
                                       {assignment.section_type || 'TEO'}
