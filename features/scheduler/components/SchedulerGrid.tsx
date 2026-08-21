@@ -348,6 +348,24 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
     }
   };
 
+  const getSectionBadgeStyle = (secCode?: string | number | null) => {
+    const str = String(secCode || '1').toUpperCase();
+    const num = parseInt(str.replace(/\D/g, ''), 10) || 1;
+    if (num === 1) return 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border-blue-300 dark:border-blue-700/80';
+    if (num === 2) return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700/80';
+    if (num === 3) return 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border-amber-300 dark:border-amber-700/80';
+    return 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200 border-purple-300 dark:border-purple-700/80';
+  };
+
+  const formatSectionLabel = (secCode?: string | number | null, parallelIndex?: number) => {
+    if (secCode) {
+      const clean = String(secCode).trim();
+      if (clean.toUpperCase().startsWith('SEC')) return clean;
+      return `Sec ${clean}`;
+    }
+    return `Sec ${(parallelIndex ?? 0) + 1}`;
+  };
+
   // Active days list based on timeScope
   const activeDays = timeScope === 'week' 
     ? [1, 2, 3, 4, 5] 
@@ -739,8 +757,9 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                                     <span className="font-bold text-xs text-slate-900 dark:text-white leading-tight">
                                       {assignment.subject_name || assignment.subject_code}
                                     </span>
-                                    <span className="px-1 py-0.2 rounded text-[8px] font-black uppercase bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                                      {assignment.section_code ? (assignment.section_code.startsWith('SEC') ? assignment.section_code : `Sec ${assignment.section_code}`) : `Sec ${(assignment.parallel_index ?? 0) + 1}`}
+                                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wide border shadow-2xs flex items-center gap-0.5 ${getSectionBadgeStyle(assignment.section_code || ((assignment.parallel_index ?? 0) + 1))}`}>
+                                      <span className="material-symbols-outlined text-[10px]">class</span>
+                                      <span>{formatSectionLabel(assignment.section_code, assignment.parallel_index)}</span>
                                     </span>
                                     <span className={`px-1.5 py-0.2 rounded text-[9px] uppercase border ${getTypeStyle(assignment.section_type)}`}>
                                       {assignment.section_type || 'TEO'}
@@ -886,8 +905,9 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                                         <span className="font-bold text-xs text-slate-900 dark:text-white leading-tight">
                                           {assignment.subject_name || assignment.subject_code}
                                         </span>
-                                        <span className="px-1 py-0.2 rounded text-[8px] font-black uppercase bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                                          {assignment.section_code ? (assignment.section_code.startsWith('SEC') ? assignment.section_code : `Sec ${assignment.section_code}`) : `Sec ${pIdx + 1}`}
+                                        <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-extrabold uppercase tracking-wide border shadow-2xs flex items-center gap-0.5 ${getSectionBadgeStyle(assignment.section_code || (pIdx + 1))}`}>
+                                          <span className="material-symbols-outlined text-[9px]">class</span>
+                                          <span>{formatSectionLabel(assignment.section_code, pIdx)}</span>
                                         </span>
                                         <span className={`px-1 py-0.2 rounded text-[8px] uppercase border ${getTypeStyle(assignment.section_type)}`}>
                                           {assignment.section_type || 'TEO'}

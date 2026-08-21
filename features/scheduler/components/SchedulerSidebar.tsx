@@ -176,6 +176,22 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
     }
   };
 
+  const getSectionBadgeStyle = (secCode?: string | number) => {
+    const str = String(secCode || '1').toUpperCase();
+    const num = parseInt(str.replace(/\D/g, ''), 10) || 1;
+    if (num === 1) return 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border-blue-300 dark:border-blue-700/80';
+    if (num === 2) return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700/80';
+    if (num === 3) return 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border-amber-300 dark:border-amber-700/80';
+    return 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200 border-purple-300 dark:border-purple-700/80';
+  };
+
+  const formatSectionLabel = (secCode?: string | number) => {
+    if (!secCode) return 'Sección 1';
+    const clean = String(secCode).trim();
+    if (clean.toUpperCase().startsWith('SEC')) return clean;
+    return `Sección ${clean}`;
+  };
+
   return (
     <aside className="w-84 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-full z-20 shadow-xs shrink-0">
       {/* Sidebar Header */}
@@ -407,8 +423,9 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                       <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
                         NRC {section.nrc}
                       </span>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                        {section.section_code ? (section.section_code.startsWith('SEC') ? section.section_code : `Sec ${section.section_code}`) : 'Sec 1'}
+                      <span className={`px-2 py-0.5 rounded-md text-[9.5px] font-extrabold uppercase tracking-wide border shadow-2xs flex items-center gap-1 ${getSectionBadgeStyle(section.section_code || 1)}`}>
+                        <span className="material-symbols-outlined text-[12px]">class</span>
+                        <span>{formatSectionLabel(section.section_code || 1)}</span>
                       </span>
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
                         N{section.level}
