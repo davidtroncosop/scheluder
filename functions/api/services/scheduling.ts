@@ -317,6 +317,29 @@ export async function validateAssignment(db: D1Database, params: {
         }
     }
 
+    // Teacher Max Hours constraint
+    if (teacherId) {
+        const teacher = await db.prepare('SELECT name, max_hours_per_week FROM teachers WHERE id = ?').bind(teacherId).first<{ name: string; max_hours_per_week: number }>();
+        if (teacher && teacher.max_hours_per_week > 0) {
+            const assignedHoursResult = await db.prepare(`
+                SELECT SUM(sec.hours_per_week) as total_hours
+                FROM schedule_assignments sa
+                JOIN sections sec ON sec.id = sa.section_id AND sec.period_id = sa.period_id
+                WHERE sec.teacher_id = ? AND sa.period_id = ? AND (? IS NULL OR sa.id <> ?)
+            `).bind(teacherId, params.period_id, excludedId, excludedId).first<{ total_hours: number | null }>();
+
+            const currentAssigned = Number(assignedHoursResult?.total_hours || 0);
+            const totalWithCurrent = currentAssigned + Number(section.hours_per_week || 2);
+            if (totalWithCurrent > teacher.max_hours_per_week) {
+                conflicts.push({
+                    type: 'WARNING',
+                    rule_code: 'TEACHER_MAX_HOURS_EXCEEDED',
+                    description: `Tope de horas de contrato: El docente ${teacher.name} alcanzará ${totalWithCurrent} hrs/semana, superando su límite de contrato (${teacher.max_hours_per_week} hrs).`,
+                });
+            }
+        }
+    }
+
     return conflicts;
 }
 

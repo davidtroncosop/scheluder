@@ -90,6 +90,48 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
   const pendingCount = useMemo(() => sections.filter(s => (s.assigned_slots || 0) < Number(s.hours_per_week || 0)).length, [sections]);
   const completedCount = sections.length - pendingCount;
 
+  // Teacher Load Calculation (Hours Assigned across sections)
+  const teacherLoadMap = useMemo(() => {
+    const map = new Map<string, { totalHours: number; sectionsCount: number; maxHours: number; contractType: string }>();
+    
+    // Initialize with all teachers
+    teachers.forEach(t => {
+      const key = (t.nombre || '').trim().toLowerCase();
+      map.set(key, {
+        totalHours: 0,
+        sectionsCount: 0,
+        maxHours: Number(t.max_horas || 12),
+        contractType: t.tipo_contrato || 'Honorarios',
+      });
+    });
+
+    // Accumulate hours from all sections assigned to each teacher
+    sections.forEach(s => {
+      if (s.teacher_name) {
+        const key = s.teacher_name.trim().toLowerCase();
+        const entry = map.get(key) || {
+          totalHours: 0,
+          sectionsCount: 0,
+          maxHours: 12,
+          contractType: 'Honorarios',
+        };
+        entry.totalHours += Number(s.hours_per_week || 2);
+        entry.sectionsCount += 1;
+        map.set(key, entry);
+      }
+    });
+
+    return map;
+  }, [sections, teachers]);
+
+  const overloadedTeachersCount = useMemo(() => {
+    let count = 0;
+    teacherLoadMap.forEach(load => {
+      if (load.totalHours > load.maxHours) count++;
+    });
+    return count;
+  }, [teacherLoadMap]);
+
   // Filter sections
   const filteredSections = sections.filter(section => {
     const matchesSearch = 
@@ -153,13 +195,16 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('docentes')}
-            className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+            className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 ${
               activeTab === 'docentes'
                 ? 'bg-white dark:bg-slate-700 text-primary shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
             }`}
           >
-            Docentes ({teachers.length})
+            <span>Docentes ({teachers.length})</span>
+            {overloadedTeachersCount > 0 && (
+              <span className="size-2 rounded-full bg-rose-500 animate-pulse" title={`${overloadedTeachersCount} docente(s) superan su tope de contrato`} />
+            )}
           </button>
         </div>
 
@@ -317,6 +362,12 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
               const isCompleted = assigned >= required;
               const isActive = activeSectionId === section.id;
 
+              // Teacher load check for this section
+              const teacherKey = (section.teacher_name || '').trim().toLowerCase();
+              const teacherLoad = section.teacher_name ? teacherLoadMap.get(teacherKey) : null;
+              const isTeacherOverloaded = teacherLoad && teacherLoad.totalHours > teacherLoad.maxHours;
+              const isTeacherAtLimit = teacherLoad && teacherLoad.totalHours === teacherLoad.maxHours;
+
               // Filter compatible rooms strictly by capacity and certified type
               const secType = (section.type || 'TEO').toUpperCase();
               const expectedStudents = Number(section.expected_students || 0);
@@ -339,6 +390,8 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                   className={`p-3 rounded-xl border transition-all ${
                     hasNoCompatibleRoom
                       ? 'border-rose-300 dark:border-rose-800/80 bg-rose-50/40 dark:bg-rose-950/20'
+                      : isTeacherOverloaded
+                      ? 'border-rose-300/80 dark:border-rose-800/60 bg-rose-50/20 dark:bg-rose-950/10'
                       : 'cursor-grab active:cursor-grabbing hover:shadow-md'
                   } flex flex-col gap-2.5 ${
                     isActive
@@ -416,11 +469,38 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                     </div>
                   )}
 
+                  {/* Teacher Contract Max Hours Overload Alert */}
+                  {isTeacherOverloaded && teacherLoad && (
+                    <div className="flex items-center justify-between gap-1 text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 px-2 py-1 rounded-lg border border-rose-300 dark:border-rose-800">
+                      <span className="flex items-center gap-1 truncate">
+                        <span className="material-symbols-outlined text-xs text-rose-600 shrink-0 animate-pulse">error</span>
+                        <span className="truncate">Tope de Contrato Excedido:</span>
+                      </span>
+                      <span className="font-mono bg-rose-200/70 dark:bg-rose-900/60 px-1.5 py-0.2 rounded text-rose-900 dark:text-rose-200 shrink-0">
+                        {teacherLoad.totalHours}/{teacherLoad.maxHours}h (+{teacherLoad.totalHours - teacherLoad.maxHours}h)
+                      </span>
+                    </div>
+                  )}
+
+                  {isTeacherAtLimit && teacherLoad && (
+                    <div className="flex items-center justify-between gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800">
+                      <span className="flex items-center gap-1 truncate">
+                        <span className="material-symbols-outlined text-xs text-amber-600 shrink-0">bolt</span>
+                        <span className="truncate">Límite de Contrato Alcanzado:</span>
+                      </span>
+                      <span className="font-mono bg-amber-200/70 dark:bg-amber-900/60 px-1.5 py-0.2 rounded text-amber-900 dark:text-amber-200 shrink-0">
+                        {teacherLoad.totalHours}/{teacherLoad.maxHours}h (100%)
+                      </span>
+                    </div>
+                  )}
+
                   {/* Pre-configuration Selectors: Docente & Sala */}
                   <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60">
                     {/* Docente Selector */}
-                    <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700/70">
-                      <span className="material-symbols-outlined text-xs text-primary shrink-0">person</span>
+                    <div className={`flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2 py-1 rounded-lg border ${
+                      isTeacherOverloaded ? 'border-rose-300 dark:border-rose-800' : 'border-slate-200 dark:border-slate-700/70'
+                    }`}>
+                      <span className={`material-symbols-outlined text-xs shrink-0 ${isTeacherOverloaded ? 'text-rose-500' : 'text-primary'}`}>person</span>
                       <select
                         value={section.teacher_name || ''}
                         onChange={(e) => {
@@ -433,11 +513,16 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
                         className="w-full text-[11px] font-medium bg-transparent border-0 p-0 text-slate-800 dark:text-slate-200 focus:ring-0 cursor-pointer truncate"
                       >
                         <option value="">-- Sin docente asignado --</option>
-                        {teachers.map(t => (
-                          <option key={t.id} value={t.nombre} className="text-slate-900 dark:text-slate-100">
-                            {t.nombre} ({t.tipo_contrato})
-                          </option>
-                        ))}
+                        {teachers.map(t => {
+                          const tKey = (t.nombre || '').trim().toLowerCase();
+                          const tLoad = teacherLoadMap.get(tKey);
+                          const isOver = tLoad && tLoad.totalHours > Number(t.max_horas || 12);
+                          return (
+                            <option key={t.id} value={t.nombre} className="text-slate-900 dark:text-slate-100">
+                              {t.nombre} ({t.tipo_contrato} · {tLoad?.totalHours || 0}/{t.max_horas} hrs{isOver ? ' ⚠️ SOBRECARGA' : ''})
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
 
@@ -507,20 +592,79 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
               <p className="text-xs">No hay docentes encontrados</p>
             </div>
           ) : (
-            filteredTeachers.map(teacher => (
-              <div
-                key={teacher.id}
-                onClick={() => onTeacherSelect?.(teacher.nombre)}
-                className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-primary transition-all cursor-pointer"
-              >
-                <p className="text-xs font-bold text-slate-900 dark:text-white">
-                  {teacher.nombre}
-                </p>
-                <p className="text-[10px] text-slate-500 mt-0.5">
-                  {teacher.tipo_contrato} · Máx {teacher.max_horas} hrs/semana
-                </p>
-              </div>
-            ))
+            filteredTeachers.map(teacher => {
+              const teacherKey = (teacher.nombre || '').trim().toLowerCase();
+              const load = teacherLoadMap.get(teacherKey) || {
+                totalHours: 0,
+                sectionsCount: 0,
+                maxHours: Number(teacher.max_horas || 12),
+                contractType: teacher.tipo_contrato || 'Honorarios',
+              };
+              const percentage = Math.round((load.totalHours / load.maxHours) * 100);
+              const isOverloaded = load.totalHours > load.maxHours;
+              const isNearLimit = load.totalHours === load.maxHours;
+
+              return (
+                <div
+                  key={teacher.id}
+                  onClick={() => onTeacherSelect?.(teacher.nombre)}
+                  className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                    isOverloaded
+                      ? 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800/80 hover:border-rose-500 shadow-xs'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-primary'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-1 mb-1.5">
+                    <div>
+                      <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                        <span>{teacher.nombre}</span>
+                        {isOverloaded && (
+                          <span className="material-symbols-outlined text-xs text-rose-600 animate-pulse" title="Tope de contrato excedido">error</span>
+                        )}
+                      </p>
+                      <p className="text-[10px] text-slate-500">
+                        {teacher.tipo_contrato} · Máx {load.maxHours} hrs/semana
+                      </p>
+                    </div>
+                    {isOverloaded ? (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-rose-500 text-white animate-pulse">
+                        +{load.totalHours - load.maxHours} hrs
+                      </span>
+                    ) : (
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                        isNearLimit ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                      }`}>
+                        {load.sectionsCount} {load.sectionsCount === 1 ? 'sección' : 'secciones'}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Contract Hours Load Bar */}
+                  <div className="space-y-1 mt-2">
+                    <div className="flex items-center justify-between text-[10px] font-mono font-semibold">
+                      <span className={isOverloaded ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-500 dark:text-slate-400'}>
+                        {load.totalHours} / {load.maxHours} hrs asignadas
+                      </span>
+                      <span className={isOverloaded ? 'text-rose-600 dark:text-rose-400 font-bold' : isNearLimit ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}>
+                        {percentage}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-750 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          isOverloaded
+                            ? 'bg-rose-500 shadow-xs shadow-rose-500/50'
+                            : isNearLimit
+                            ? 'bg-amber-500'
+                            : 'bg-emerald-500'
+                        }`}
+                        style={{ width: `${Math.min(100, percentage)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })
           )
         )}
       </div>
