@@ -120,6 +120,80 @@ body {
   animation: gradient-x 15s ease infinite;
 }
 
+/* Card Placement Spring & Tactile Animations */
+@keyframes assignPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(12px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.04) translateY(-3px);
+  }
+  85% {
+    transform: scale(0.98) translateY(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes assignGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.7), 0 10px 15px -3px rgba(79, 70, 229, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(79, 70, 229, 0.35), 0 10px 20px -3px rgba(79, 70, 229, 0.25);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0), 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  }
+}
+
+@keyframes dropSlotPulse {
+  0%, 100% {
+    border-color: rgba(99, 102, 241, 0.5);
+    background-color: rgba(99, 102, 241, 0.08);
+  }
+  50% {
+    border-color: rgba(99, 102, 241, 0.95);
+    background-color: rgba(99, 102, 241, 0.22);
+    transform: scale(0.99);
+  }
+}
+
+@keyframes badgePop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-assign-pop {
+  animation: assignPop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.animate-assign-glow {
+  animation: assignGlow 1.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-drop-target {
+  animation: dropSlotPulse 1.2s ease-in-out infinite;
+}
+
+.animate-badge-pop {
+  animation: badgePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
 /* Background Patterns */
 .pattern-diagonal {
   background-image: repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.02) 0px, rgba(0, 0, 0, 0.02) 1px, transparent 1px, transparent 10px);

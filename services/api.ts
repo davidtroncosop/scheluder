@@ -16,6 +16,7 @@ import type {
     SubjectRoomCompatibility,
     SubjectPrerequisite,
 } from '../types';
+import type { SolverResult } from '../features/scheduler/solver';
 import { session, type SessionUser } from '../lib/session';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -404,14 +405,29 @@ class SchedulerAPI {
         return this.request(`/schedule/${id}`, { method: 'PUT', body: JSON.stringify(changes) });
     }
 
-    async getScheduleStatus(periodId: string, careerId?: string): Promise<{ status: 'draft' | 'review' | 'published' }> {
+    async getScheduleStatus(periodId: string, careerId?: string): Promise<{ status: 'draft' | 'review' | 'published'; updated_at?: string | null }> {
         const params = new URLSearchParams({ period_id: periodId });
         if (careerId) params.set('career_id', careerId);
         return this.request(`/schedule/status?${params.toString()}`);
     }
 
-    async publishSchedule(periodId: string, careerId?: string): Promise<{ success: boolean; status: 'published' }> {
-        return this.request('/schedule/publish', { method: 'POST', body: JSON.stringify({ period_id: periodId, career_id: careerId }) });
+    async updateScheduleStatus(params: { periodId: string; careerId?: string; status: 'draft' | 'review'; expectedUpdatedAt?: string }): Promise<{ success: boolean; status: 'draft' | 'review' }> {
+        return this.request('/schedule/status', {
+            method: 'PUT',
+            body: JSON.stringify({
+                period_id: params.periodId,
+                career_id: params.careerId,
+                status: params.status,
+                expected_updated_at: params.expectedUpdatedAt,
+            }),
+        });
+    }
+
+    async publishSchedule(periodId: string, careerId?: string, expectedUpdatedAt?: string): Promise<{ success: boolean; status: 'published' }> {
+        return this.request('/schedule/publish', {
+            method: 'POST',
+            body: JSON.stringify({ period_id: periodId, career_id: careerId, expected_updated_at: expectedUpdatedAt }),
+        });
     }
 
     async getAudit(periodId: string): Promise<Array<Record<string, unknown>>> {
@@ -426,6 +442,23 @@ class SchedulerAPI {
         return this.request<SlotScore[]>(
             `/schedule/score?section_id=${sectionId}&period_id=${periodId}`
         );
+    }
+
+    async autoAssignSchedule(params: {
+        periodId: string;
+        careerId?: string;
+        maxBacktrackDepth?: number;
+        mode?: 'merge' | 'replace';
+    }): Promise<SolverResult & { success: boolean }> {
+        return this.request<SolverResult & { success: boolean }>('/schedule/auto-assign', {
+            method: 'POST',
+            body: JSON.stringify({
+                period_id: params.periodId,
+                career_id: params.careerId,
+                max_backtrack_depth: params.maxBacktrackDepth ?? 2,
+                mode: params.mode ?? 'merge',
+            }),
+        });
     }
 
     // =============================================

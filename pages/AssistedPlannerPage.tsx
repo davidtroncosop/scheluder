@@ -13,6 +13,7 @@ import {
   type AssistedImportValidation,
 } from '../features/assisted-planner/workflow';
 import { downloadFile, generateICalendar, generateScheduleCsv } from '../features/scheduler/export';
+import type { SolverResult } from '../features/scheduler/solver';
 import type { AssignmentWithDetails, Career, Conflict, SectionWithDetails, Teacher, Room } from '../types';
 
 type WizardStep = 1 | 2 | 3 | 4;
@@ -62,6 +63,7 @@ const AssistedPlannerPage: React.FC = () => {
   const [scheduleStatus, setScheduleStatus] = useState<'draft' | 'review' | 'published'>('draft');
   const [busy, setBusy] = useState(false);
   const [generationProgress, setGenerationProgress] = useState({ done: 0, total: 0, failed: 0 });
+  const [proposalResult, setProposalResult] = useState<SolverResult | null>(null);
   const [notice, setNotice] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
   useEffect(() => {
@@ -165,47 +167,39 @@ const AssistedPlannerPage: React.FC = () => {
   };
 
   const generateProposal = async () => {
-    if (!sections.length || !selectedPeriod) return;
+    if (!sections.length || !selectedPeriod || !selectedCareer) return;
     setBusy(true);
     setNotice(null);
-    const queue = buildPrioritizedAssignmentQueue(sections);
-    let completed = 0;
-    let failed = 0;
-    setGenerationProgress({ done: 0, total: queue.length, failed: 0 });
-
-    for (const sectionId of queue) {
-      try {
-        const scores = await api.getSlotScores(sectionId, selectedPeriod);
-        const best = scores.find(score => !score.blocked);
-        if (!best) {
-          failed++;
-        } else {
-          await api.assignSection({
-            section_id: sectionId,
-            room_id: best.room_id,
-            timeslot_id: best.timeslot_id,
-            day_of_week: best.day_of_week,
-            period_id: selectedPeriod,
-          });
-          completed++;
-        }
-      } catch {
-        failed++;
-      }
-      setGenerationProgress(progress => ({ ...progress, done: progress.done + 1, failed }));
-    }
+    setGenerationProgress({ done: 0, total: 100, failed: 0 });
 
     try {
+      const result = await api.autoAssignSchedule({
+        periodId: selectedPeriod,
+        careerId: selectedCareer,
+        maxBacktrackDepth: 2,
+        mode: importMode,
+      });
+
+      setProposalResult(result);
       await refreshContext();
+
+      const failedCount = result.unassigned.reduce((sum, u) => sum + u.unassignedHours, 0);
+      const deadlockMsg = result.deadlocksResolved > 0
+        ? ` (${result.deadlocksResolved} callejones sin salida resueltos mediante reubicación inteligente)`
+        : '';
+
       setNotice({
-        type: failed ? 'info' : 'success',
-        message: failed
-          ? `Se asignaron ${completed} bloques. ${failed} requieren ajuste o más salas disponibles.`
-          : `¡Propuesta generada con éxito! ${completed} bloques asignados automáticamente sin choques.`,
+        type: failedCount > 0 ? 'info' : 'success',
+        message: failedCount > 0
+          ? `Se asignaron ${result.totalSlotsAssigned} módulos (${result.coveragePercentage}% cobertura)${deadlockMsg}. ${failedCount} módulo(s) requieren atención o ajuste de capacidad.`
+          : `¡Propuesta generada con éxito! ${result.totalSlotsAssigned} módulos asignados (${result.coveragePercentage}% cobertura)${deadlockMsg} sin choques en ${result.executionTimeMs}ms.`,
       });
       setStep(4);
     } catch (error) {
-      setNotice({ type: 'error', message: error instanceof Error ? error.message : 'La propuesta se generó, pero no pudo recargarse' });
+      setNotice({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Error durante la optimización automática del horario',
+      });
     } finally {
       setBusy(false);
     }
@@ -662,6 +656,45 @@ const AssistedPlannerPage: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* Backtracking and Solver Insights */}
+            {proposalResult && proposalResult.deadlocksResolved > 0 && (
+              <div className="mt-5 p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 text-xs">
+                <div className="flex items-center gap-2 font-bold text-indigo-900 dark:text-indigo-200">
+                  <span className="material-symbols-outlined text-lg text-indigo-600">tune</span>
+                  <span>Motor Heurístico con Backtracking Acotado: {proposalResult.deadlocksResolved} callejones sin salida resueltos</span>
+                </div>
+                <p className="mt-1 text-slate-600 dark:text-slate-300">
+                  El optimizador detectó bloques con sobre-demanda inicial y ejecutó {proposalResult.relocations.length} reubicaciones inteligentes sin introducir nuevos conflictos para maximizar la cobertura del horario.
+                </p>
+              </div>
+            )}
+
+            {/* Bottlenecks and Unassigned Diagnostics */}
+            {proposalResult && proposalResult.unassigned.length > 0 && (
+              <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-500/5 p-4">
+                <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-200 text-sm mb-3">
+                  <span className="material-symbols-outlined text-amber-600">troubleshoot</span>
+                  <span>Diagnóstico de Cuellos de Botella ({proposalResult.unassigned.length} asignaturas con módulos pendientes)</span>
+                </div>
+                <div className="space-y-2.5">
+                  {proposalResult.unassigned.map(u => (
+                    <div key={u.section_id} className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-amber-200/70 dark:border-amber-900/60 text-xs">
+                      <div className="flex items-center justify-between font-bold text-slate-900 dark:text-white">
+                        <span>{u.subject_name} (NRC {u.nrc})</span>
+                        <span className="text-amber-600 font-bold">{u.unassignedHours} módulo(s) pendiente(s)</span>
+                      </div>
+                      <p className="mt-1 text-slate-600 dark:text-slate-300">
+                        <strong className="text-slate-700 dark:text-slate-200">Causa principal:</strong> {u.primaryBottleneck}
+                      </p>
+                      <p className="mt-0.5 text-indigo-600 dark:text-indigo-400 font-medium">
+                        <strong>Acción recomendada:</strong> {u.suggestedAction}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Quick Export Hub */}
             <div className="mt-6 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 bg-slate-50/50 dark:bg-slate-800/40">

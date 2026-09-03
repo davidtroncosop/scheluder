@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import type {
   SchedulerAssignment as Assignment,
   SchedulerConflict as Conflict,
@@ -67,6 +67,48 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
 
   const gridScrollRef = useRef<HTMLDivElement>(null);
   const tardeSlotRef = useRef<HTMLDivElement>(null);
+
+  // Recently assigned animation tracking
+  const [recentlyAssignedIds, setRecentlyAssignedIds] = useState<Set<string>>(new Set());
+  const prevAssignmentIdsRef = useRef<Set<string>>(new Set(assignments.map(a => a.id)));
+  const isInitialMount = useRef(true);
+
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      prevAssignmentIdsRef.current = new Set(assignments.map(a => a.id));
+      return;
+    }
+
+    const currentIds = new Set(assignments.map(a => a.id));
+    const newIds: string[] = [];
+    currentIds.forEach(id => {
+      if (!prevAssignmentIdsRef.current.has(id)) {
+        newIds.push(id);
+      }
+    });
+
+    if (newIds.length > 0) {
+      setRecentlyAssignedIds(prev => {
+        const next = new Set(prev);
+        newIds.forEach(id => next.add(id));
+        return next;
+      });
+
+      const timer = setTimeout(() => {
+        setRecentlyAssignedIds(prev => {
+          const next = new Set(prev);
+          newIds.forEach(id => next.delete(id));
+          return next;
+        });
+      }, 2500);
+
+      prevAssignmentIdsRef.current = currentIds;
+      return () => clearTimeout(timer);
+    } else {
+      prevAssignmentIdsRef.current = currentIds;
+    }
+  }, [assignments]);
 
   // The section currently being planned (either dragged or active)
   const targetSection = draggingSection || activeSchedulingSection;
@@ -751,14 +793,17 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
 
                         {/* Drag and Drop / Click Prompt */}
                         {cellAssignments.length === 0 && targetSection && (
-                          <div className={`h-full w-full rounded-lg flex items-center justify-center text-xs font-bold transition-all ${
+                          <div className={`h-full w-full rounded-xl flex flex-col items-center justify-center text-xs font-bold transition-all duration-150 ${
                             isTarget
-                              ? 'border-2 border-dashed border-primary text-primary bg-primary/10'
+                              ? 'border-2 border-primary text-primary bg-primary/15 shadow-inner scale-[0.98] animate-drop-target'
                               : compatibility?.type === 'FREE' || compatibility?.type === 'PREFERRED'
-                              ? 'border border-dashed border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-500/5 hover:bg-emerald-500/15'
+                              ? 'border-2 border-dashed border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-500/5 hover:bg-emerald-500/15 hover:scale-[0.99] cursor-pointer'
                               : 'opacity-0'
                           }`}>
-                            {isTarget ? 'Soltar aquí' : 'Clic para asignar'}
+                            <span className={`material-symbols-outlined text-base mb-0.5 ${isTarget ? 'animate-bounce text-primary' : 'text-emerald-500'}`}>
+                              {isTarget ? 'download' : 'add_circle'}
+                            </span>
+                            <span>{isTarget ? '¡Soltar aquí!' : 'Clic para asignar'}</span>
                           </div>
                         )}
 
@@ -766,13 +811,16 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                         <div className={`flex flex-col gap-1.5 ${timeScope === 'day' ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2' : ''}`}>
                           {cellAssignments.map((assignment) => {
                             const conflict = getAssignmentConflict(assignment.id);
+                            const isRecentlyAssigned = recentlyAssignedIds.has(assignment.id);
 
                             return (
                               <div
                                 key={assignment.id}
                                 onClick={(e) => e.stopPropagation()}
-                                className={`group relative p-2.5 rounded-xl border transition-all shadow-xs hover:shadow-md ${
-                                  conflict
+                                className={`group relative p-2.5 rounded-xl border transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md cursor-pointer ${
+                                  isRecentlyAssigned
+                                    ? 'animate-assign-pop animate-assign-glow ring-2 ring-primary border-primary z-20'
+                                    : conflict
                                     ? conflict.type === 'CRITICAL'
                                     ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 text-rose-900 dark:text-rose-200 ring-1 ring-rose-400'
                                     : 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 text-amber-900 dark:text-amber-200'
@@ -791,6 +839,12 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                                     <span className={`px-1.5 py-0.2 rounded text-[9px] uppercase border ${getTypeStyle(assignment.section_type)}`}>
                                       {assignment.section_type || 'TEO'}
                                     </span>
+                                    {isRecentlyAssigned && (
+                                      <span className="animate-badge-pop px-1.5 py-0.5 rounded-md text-[8.5px] font-black uppercase tracking-wider bg-emerald-500 text-white shadow-xs flex items-center gap-0.5">
+                                        <span className="material-symbols-outlined text-[10px] animate-spin">auto_awesome</span>
+                                        <span>¡Asignado!</span>
+                                      </span>
+                                    )}
                                   </div>
 
                                   <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
@@ -898,14 +952,17 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
 
                             {/* Drag and Drop prompt */}
                             {trackAssignments.length === 0 && targetSection && (
-                              <div className={`h-full w-full rounded-lg flex items-center justify-center text-[10px] font-bold transition-all ${
+                              <div className={`h-full w-full rounded-xl flex flex-col items-center justify-center text-[10px] font-bold transition-all duration-150 ${
                                 isTrackTarget
-                                  ? 'border-2 border-dashed border-primary text-primary bg-primary/10'
+                                  ? 'border-2 border-primary text-primary bg-primary/15 shadow-inner scale-[0.98] animate-drop-target'
                                   : compatibility?.type === 'FREE' || compatibility?.type === 'PREFERRED'
-                                  ? 'border border-dashed border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-500/5 hover:bg-emerald-500/15'
+                                  ? 'border-2 border-dashed border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-500/5 hover:bg-emerald-500/15 hover:scale-[0.99] cursor-pointer'
                                   : 'opacity-0'
                               }`}>
-                                {isTrackTarget ? 'Soltar aquí' : `Sec. ${pIdx + 1}`}
+                                <span className={`material-symbols-outlined text-sm mb-0.5 ${isTrackTarget ? 'animate-bounce text-primary' : 'text-emerald-500'}`}>
+                                  {isTrackTarget ? 'download' : 'add_circle'}
+                                </span>
+                                <span>{isTrackTarget ? '¡Soltar!' : `Sec. ${pIdx + 1}`}</span>
                               </div>
                             )}
 
@@ -913,12 +970,16 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                             <div className="flex flex-col gap-1.5">
                               {trackAssignments.map((assignment) => {
                                 const conflict = getAssignmentConflict(assignment.id);
+                                const isRecentlyAssigned = recentlyAssignedIds.has(assignment.id);
+
                                 return (
                                   <div
                                     key={assignment.id}
                                     onClick={(e) => e.stopPropagation()}
-                                    className={`group relative p-2 rounded-xl border transition-all shadow-xs hover:shadow-md ${
-                                      conflict
+                                    className={`group relative p-2 rounded-xl border transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md cursor-pointer ${
+                                      isRecentlyAssigned
+                                        ? 'animate-assign-pop animate-assign-glow ring-2 ring-primary border-primary z-20'
+                                        : conflict
                                         ? conflict.type === 'CRITICAL'
                                         ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 text-rose-900 dark:text-rose-200 ring-1 ring-rose-400'
                                         : 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 text-amber-900 dark:text-amber-200'
@@ -937,6 +998,12 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                                         <span className={`px-1 py-0.2 rounded text-[8px] uppercase border ${getTypeStyle(assignment.section_type)}`}>
                                           {assignment.section_type || 'TEO'}
                                         </span>
+                                        {isRecentlyAssigned && (
+                                          <span className="animate-badge-pop px-1 py-0.2 rounded text-[7.5px] font-black uppercase tracking-wider bg-emerald-500 text-white shadow-xs flex items-center gap-0.5">
+                                            <span className="material-symbols-outlined text-[9px] animate-spin">auto_awesome</span>
+                                            <span>¡Asignado!</span>
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
                                         <button

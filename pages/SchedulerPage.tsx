@@ -1,22 +1,11 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
+import React, { useEffect, useRef, useState } from 'react';
 import { MainLayout } from '../components/MainLayout';
 import ConflictPanel from '../components/ConflictPanel';
 import api from '../services/api';
 import * as dataStore from '../lib/dataStore';
-import { OFFLINE_DEMO_ENABLED } from '../lib/runtime';
 import { useAcademicPeriods } from '../lib/academicPeriods';
-import {
-  calculateHealth,
-  mapBackendAssignments,
-  type SchedulerAssignment as Assignment,
-  type SchedulerConflict as Conflict,
-  type SchedulerHealth as HealthMetrics,
-  type SchedulerSection as Section,
-  type SchedulerTimeslot as Timeslot,
-} from '../features/scheduler/model';
-import { buildPrioritizedAssignmentQueue } from '../features/assisted-planner/workflow';
+import { useSchedulerState } from '../features/scheduler/hooks/useSchedulerState';
+import { useSchedulerOperations } from '../features/scheduler/hooks/useSchedulerOperations';
 
 import { SchedulerHeader } from '../features/scheduler/components/SchedulerHeader';
 import { SchedulerStats } from '../features/scheduler/components/SchedulerStats';
@@ -26,770 +15,116 @@ import { AssignmentModal } from '../features/scheduler/components/AssignmentModa
 import { SectionModal } from '../features/scheduler/components/SectionModal';
 import { RoomSelectorModal } from '../features/scheduler/components/RoomSelectorModal';
 import { ExportModal } from '../features/scheduler/components/ExportModal';
-import { generateSchedulePdf } from '../features/scheduler/export';
-import { AuditDrawer, type AuditLogItem } from '../features/scheduler/components/AuditDrawer';
+import { AuditDrawer } from '../features/scheduler/components/AuditDrawer';
 
 export type { SchedulerConflict as Conflict } from '../features/scheduler/model';
 
 const DAYS_LIST = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 
 const SchedulerPage: React.FC = () => {
-  // Data states
-  const [sections, setSections] = useState<Section[]>([]);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [conflicts, setConflicts] = useState<Conflict[]>([]);
-  const [timeslots, setTimeslots] = useState<Timeslot[]>([]);
-  const [metrics, setMetrics] = useState<HealthMetrics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
-
-  // Modals & Panels state
-  const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
-  const [editingSection, setEditingSection] = useState<Section | null>(null);
-  const [isSectionModalOpen, setIsSectionModalOpen] = useState(false);
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [showAuditPanel, setShowAuditPanel] = useState(false);
-  const [showConflictsPanel, setShowConflictsPanel] = useState(false);
-  const [autoAssignProgress, setAutoAssignProgress] = useState<{
-    current: number;
-    total: number;
-    currentSubjectName?: string;
-    currentNrc?: string;
-    completed: number;
-    failed: number;
-  } | null>(null);
-  const [proposalResult, setProposalResult] = useState<{
-    completed: number;
-    failed: number;
-    total: number;
-  } | null>(null);
-  const [, setSelectedConflict] = useState<Conflict | null>(null);
-  const [allSubjects, setAllSubjects] = useState<dataStore.ImportedSubject[]>([]);
-
-  // Period & Workflow state
   const { periods, selectedPeriod, setSelectedPeriod } = useAcademicPeriods();
-  const [scheduleStatus, setScheduleStatus] = useState<'draft' | 'review' | 'published'>('draft');
-  const [saving, setSaving] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
+  const state = useSchedulerState();
+  const operations = useSchedulerOperations({ state, selectedPeriod, periods });
 
-  // View mode states
-  const [viewMode, setViewMode] = useState<'nivel' | 'sala' | 'docente'>('nivel');
-  const [selectedViewLevel, setSelectedViewLevel] = useState<number>(0);
-  const [selectedViewTeacher, setSelectedViewTeacher] = useState<string | null>(null);
-  const [selectedViewRoom, setSelectedViewRoom] = useState<string>('TODAS');
-  const [teacherAvailabilities, setTeacherAvailabilities] = useState<Array<{ teacher_id: string; day_of_week: number; timeslot_id: string; status: string; teacher_name?: string }>>([]);
-
-  // Drag and Drop & Active Scheduling Section states
-  const [draggingSection, setDraggingSection] = useState<Section | null>(null);
-  const [activeSchedulingSection, setActiveSchedulingSection] = useState<Section | null>(null);
-  const [dropTarget, setDropTarget] = useState<{ timeslotId: string; dayOfWeek: number; parallelIndex: number } | null>(null);
-  const [roomSelectorData, setRoomSelectorData] = useState<{
-    section: Section;
-    timeslotId: string;
-    dayOfWeek: number;
-    parallelIndex: number;
-  } | null>(null);
-  const [availableRooms, setAvailableRooms] = useState<Array<{ id: string; name: string; type: string; capacity: number }>>([]);
-
-  // Sidebar & Teacher states
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
-  const [modalDefaultLevel, setModalDefaultLevel] = useState<number>(1);
-  const [modalInitialValues, setModalInitialValues] = useState<Partial<Section> | null>(null);
-  const [teachers, setTeachers] = useState<dataStore.ImportedTeacher[]>([]);
-  const [auditLog, setAuditLog] = useState<AuditLogItem[]>([
-    { id: '1', timestamp: new Date(Date.now() - 3600000), action: 'save', description: 'Guardado borrador', user: 'Coordinador' },
-    { id: '2', timestamp: new Date(Date.now() - 7200000), action: 'assign', description: 'Asignado módulo a Lunes Bloque 1', user: 'Coordinador' },
-  ]);
-
+  const [, setSelectedConflict] = useState<any>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
 
-  // Helper to add audit logs
-  const addAuditEntry = (action: string, description: string) => {
-    setAuditLog(prev => [{
-      id: `audit-${Date.now()}`,
-      timestamp: new Date(),
-      action,
-      description,
-      user: 'Coordinador',
-    }, ...prev]);
-  };
-
-  // Load Rooms
-  const refreshRooms = useCallback(() => {
-    const rooms = dataStore.getRooms();
-    const mapped = rooms.length > 0
-      ? rooms.map((r: any) => ({
-        id: r.id,
-        name: r.nombre || r.name || 'Sin Nombre',
-        type: (r.tipo || r.type || 'TEO').toUpperCase(),
-        capacity: r.capacidad || r.capacity || 30,
-      }))
-      : OFFLINE_DEMO_ENABLED ? [
-        { id: 'room-1', name: 'SALA 201', type: 'TEO', capacity: 40 },
-        { id: 'room-2', name: 'SALA 202', type: 'TEO', capacity: 40 },
-        { id: 'room-3', name: 'SALA 204', type: 'TEO', capacity: 35 },
-        { id: 'room-4', name: 'LAB 1', type: 'LAB', capacity: 20 },
-        { id: 'room-5', name: 'LAB 2', type: 'LAB', capacity: 20 },
-        { id: 'room-6', name: 'SIMULADOR 1', type: 'SIM', capacity: 15 },
-        { id: 'room-7', name: 'SIMULADOR 2', type: 'SIM', capacity: 15 },
-      ] : [];
-    setAvailableRooms(mapped);
-    if (mapped[0] && !selectedViewRoom) {
-      setSelectedViewRoom(mapped[0].name);
-    }
-  }, [selectedViewRoom]);
-
-  // Load Teachers & Subjects master data
+  // Initialize Master Data on Mount
   useEffect(() => {
-    refreshRooms();
+    state.refreshRooms();
     const storedTeachers = dataStore.getTeachers();
-    setTeachers(storedTeachers);
+    state.setTeachers(storedTeachers);
     const storedSubjects = dataStore.getSubjects();
-    setAllSubjects(storedSubjects);
-  }, [refreshRooms]);
+    state.setAllSubjects(storedSubjects);
+  }, [state.refreshRooms, state.setAllSubjects, state.setTeachers]);
 
-  const availableTeachersList = useMemo(() => {
-    const list = teachers.map(t => t.nombre).filter(Boolean);
-    assignments.forEach(a => {
-      if (a.teacher_name && !list.includes(a.teacher_name)) {
-        list.push(a.teacher_name);
-      }
-    });
-    return [...new Set(list)];
-  }, [teachers, assignments]);
-
-  const availableLevels = useMemo(() => {
-    const levels = new Set<number>();
-    sections.forEach(s => {
-      if (s.level) levels.add(Number(s.level));
-    });
-    if (levels.size === 0) return [1, 2, 3, 4, 5, 6, 7, 8];
-    return Array.from(levels).sort((a, b) => a - b);
-  }, [sections]);
-
-  // Load schedule data
-  const loadScheduleData = useCallback(async () => {
-    if (!selectedPeriod) return;
-    setLoading(true);
-    setError(null);
-    try {
-      // 1. Fetch remote data with api client
-      const [remoteSchedule, remoteSections, remoteTimeslots, remoteConflicts, remoteStatus, remoteRooms, remoteTeachers, remoteAvails] = await Promise.all([
-        api.getSchedule(selectedPeriod).catch(() => []),
-        api.getSectionsForContext(selectedPeriod).catch(() => []),
-        api.getTimeslots().catch(() => []),
-        api.getConflicts(false).catch(() => []),
-        api.getScheduleStatus(selectedPeriod).catch(() => ({ status: 'draft' as const })),
-        api.getRooms().catch(() => []),
-        api.getTeachers().catch(() => []),
-        api.getTeacherAvailabilities().catch(() => []),
-      ]);
-
-      if (remoteAvails && remoteAvails.length > 0) {
-        setTeacherAvailabilities(remoteAvails);
-      }
-
-      // Set Rooms
-      if (remoteRooms.length > 0) {
-        setAvailableRooms(remoteRooms.map(r => ({
-          id: r.id,
-          name: r.name,
-          type: r.type,
-          capacity: r.capacity,
-        })));
-        if (!selectedViewRoom || selectedViewRoom === 'SALA 201') {
-          setSelectedViewRoom('TODAS');
-        }
-      }
-
-      // Set Timeslots
-      if (remoteTimeslots && remoteTimeslots.length > 0) {
-        const sorted = [...remoteTimeslots].sort((a, b) => Number(a.order_index || 0) - Number(b.order_index || 0));
-        setTimeslots(sorted.map(slot => ({
-          id: slot.id,
-          label: slot.label,
-          start_time: slot.start_time,
-          end_time: slot.end_time,
-          order_index: Number(slot.order_index || 0),
-        })));
-      } else {
-        setTimeslots(dataStore.getCustomTimeslots());
-      }
-
-      // Set Status
-      setScheduleStatus(remoteStatus.status);
-
-      // Set Assignments
-      const mappedAsgs = mapBackendAssignments(remoteSchedule);
-      setAssignments(mappedAsgs);
-
-      // Set Conflicts
-      const loadedConflicts: Conflict[] = (remoteConflicts as any[]).map((c: any) => ({
-        id: c.id,
-        assignment_id: c.assignment_id,
-        type: c.type,
-        rule_code: c.rule_code,
-        description: c.description || '',
-        subject_name: c.subject_name || '',
-        nrc: c.nrc || '',
-        teacher_name: c.teacher_name || null,
-        timeslot_label: c.timeslot_label || '',
-        day_of_week: Number(c.day_of_week || 1),
-        parallel_index: Number(c.parallel_index || 0),
-        is_resolved: c.is_resolved,
-      }));
-      setConflicts(loadedConflicts);
-
-      // Set Sections
-      if (remoteSections && remoteSections.length > 0) {
-        const mappedSecs: Section[] = remoteSections.map((s: any) => ({
-          id: s.id,
-          subject_id: s.subject_id,
-          nrc: s.nrc,
-          subject_name: s.subject_name || s.nombre || s.codigo,
-          subject_code: s.subject_code || s.codigo,
-          level: Number(s.level || s.nivel || 1),
-          type: s.type || s.tipo || 'TEO',
-          parent_section_id: s.parent_section_id || null,
-          parent_nrc: s.parent_nrc || null,
-          parent_subject_name: s.parent_subject_name || null,
-          hours_per_week: Number(s.hours_per_week || s.horas || 2),
-          expected_students: Number(s.expected_students || s.cupo || 0),
-          assigned_slots: Number(s.assigned_slots || 0),
-          priority: Number(s.priority || 0),
-          teacher_name: s.teacher_name || s.profesor || null,
-        }));
-        setSections(mappedSecs);
-        setMetrics(calculateHealth(mappedSecs, mappedAsgs, loadedConflicts));
-      } else {
-        // Fallback to local store or demo sections
-        const localSecs = dataStore.getSections().map((s: any) => ({
-          id: s.id,
-          subject_id: s.subject_id || '',
-          nrc: s.nrc || '',
-          subject_name: s.nombre || s.subject_name || s.codigo || '',
-          subject_code: s.codigo || s.subject_code || '',
-          level: Number(s.nivel || s.level || 1),
-          type: s.tipo || s.type || 'TEO',
-          parent_section_id: s.nrc_teorico || s.parent_section_id || null,
-          parent_nrc: s.parent_nrc || null,
-          hours_per_week: Number(s.horas || s.hours_per_week || 2),
-          expected_students: Number(s.cupo || s.expected_students || 0),
-          assigned_slots: Number(s.assigned_slots || 0),
-          priority: 0,
-          teacher_name: s.profesor || s.teacher_name || null,
-        }));
-        setSections(localSecs);
-        setMetrics(calculateHealth(localSecs, mappedAsgs, loadedConflicts));
-      }
-    } catch (err) {
-      console.error('Error loading schedule data:', err);
-      setError(err instanceof Error ? err.message : 'Error al cargar datos');
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedPeriod, selectedViewRoom]);
-
+  // Load Schedule Data on Period change
   useEffect(() => {
-    loadScheduleData();
-  }, [loadScheduleData]);
+    operations.loadScheduleData();
+  }, [operations.loadScheduleData]);
 
-  // Drag & Drop handlers
-  const handleDragStart = (e: React.DragEvent, section: Section) => {
-    setDraggingSection(section);
-    e.dataTransfer.setData('text/plain', JSON.stringify(section));
-    e.dataTransfer.effectAllowed = 'copyMove';
-  };
+  const {
+    sections,
+    assignments,
+    conflicts,
+    timeslots,
+    metrics,
+    loading,
+    saving,
+    hasChanges,
+    setHasChanges,
+    error,
+    setError,
+    notice,
+    setNotice,
+    scheduleStatus,
+    availableRooms,
+    teachers,
+    allSubjects,
+    teacherAvailabilities,
+    viewMode,
+    setViewMode,
+    selectedViewLevel,
+    setSelectedViewLevel,
+    selectedViewTeacher,
+    setSelectedViewTeacher,
+    selectedViewRoom,
+    setSelectedViewRoom,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    availableTeachersList,
+    availableLevels,
+    draggingSection,
+    activeSchedulingSection,
+    setActiveSchedulingSection,
+    dropTarget,
+    roomSelectorData,
+    setRoomSelectorData,
+    editingAssignment,
+    setEditingAssignment,
+    editingSection,
+    setEditingSection,
+    isSectionModalOpen,
+    setIsSectionModalOpen,
+    showExportModal,
+    setShowExportModal,
+    showAuditPanel,
+    setShowAuditPanel,
+    showConflictsPanel,
+    setShowConflictsPanel,
+    showClearConfirmModal,
+    setShowClearConfirmModal,
+    modalDefaultLevel,
+    modalInitialValues,
+    setModalInitialValues,
+    proposalResult,
+    setProposalResult,
+    auditLog,
+    canPublish,
+  } = state;
 
-  const handleDragEnd = () => {
-    setDraggingSection(null);
-    setDropTarget(null);
-  };
-
-  const handleDragOver = (e: React.DragEvent, timeslotId: string, dayOfWeek: number, parallelIndex: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-    setDropTarget({ timeslotId, dayOfWeek, parallelIndex });
-  };
-
-  const handleDragLeave = () => {
-    setDropTarget(null);
-  };
-
-  const getCompatibleRoomsForType = (sectionType: string, minCapacity = 0) => {
-    const type = (sectionType || '').toUpperCase();
-    return availableRooms.filter(r => {
-      if (minCapacity > 0 && r.capacity < minCapacity) return false;
-      if (type === 'SIM') return r.type === 'SIM';
-      if (type === 'LAB') return r.type === 'LAB' || r.type === 'SIM';
-      if (type === 'TAL') return r.type === 'TAL';
-      return r.type === 'TEO' || r.type === 'AUD';
-    });
-  };
-
-  const findFreeCompatibleRoom = (sectionType?: string, dayOfWeek?: number, timeslotId?: string, minCapacity = 0) => {
-    const compatRooms = getCompatibleRoomsForType(sectionType || 'TEO', minCapacity);
-
-    if (!dayOfWeek || !timeslotId) return compatRooms[0] || null;
-
-    const occupiedRoomIds = assignments
-      .filter(a => a.day_of_week === dayOfWeek && a.timeslot_id === timeslotId)
-      .map(a => (a.room_id || a.room_name || '').toUpperCase());
-
-    const freeRooms = compatRooms.filter(
-      r => !occupiedRoomIds.includes(r.id.toUpperCase()) && !occupiedRoomIds.includes(r.name.toUpperCase())
-    );
-
-    return freeRooms[0] || null;
-  };
-
-  // Handler for updating teacher of a section
-  const handleUpdateSectionTeacher = async (sectionId: string, teacherName: string, teacherId?: string) => {
-    setSections(prev => prev.map(s => s.id === sectionId ? { ...s, teacher_name: teacherName, teacher_id: teacherId || null } : s));
-    if (activeSchedulingSection?.id === sectionId) {
-      setActiveSchedulingSection(prev => prev ? { ...prev, teacher_name: teacherName, teacher_id: teacherId || null } : null);
-    }
-    if (dataStore.getAuthToken()) {
-      try {
-        await api.updateSectionTeacher(sectionId, teacherId || null);
-      } catch (err) {
-        console.warn('Failed to update teacher on server:', err);
-      }
-    }
-  };
-
-  // Handler for updating room of a section
-  const handleUpdateSectionRoom = (sectionId: string, roomId: string, roomName: string) => {
-    setSections(prev => prev.map(s => s.id === sectionId ? { ...s, room_id: roomId, preferred_room_id: roomId, room_name: roomName } : s));
-    if (activeSchedulingSection?.id === sectionId) {
-      setActiveSchedulingSection(prev => prev ? { ...prev, room_id: roomId, preferred_room_id: roomId, room_name: roomName } : null);
-    }
-  };
-
-  // Direct unified execution helper
-  const executeAssignment = async (section: Section, roomId: string, timeslotId: string, dayOfWeek: number, parallelIndex = 0) => {
-    if (!selectedPeriod) return;
-    try {
-      setSaving(true);
-      setError(null);
-      if (dataStore.getAuthToken()) {
-        const res = await api.assignSection({
-          section_id: section.id,
-          room_id: roomId,
-          timeslot_id: timeslotId,
-          day_of_week: dayOfWeek,
-          period_id: selectedPeriod,
-          parallel_index: parallelIndex,
-        });
-
-        const roomObj = availableRooms.find(r => r.id === roomId);
-        if (res.warnings && res.warnings.length > 0) {
-          setNotice({ type: 'info', message: `Asignado en ${roomObj?.name || 'sala'}: ${res.warnings[0].description}` });
-        } else {
-          setNotice({ type: 'success', message: `NRC ${section.nrc} asignado exitosamente en ${roomObj?.name || 'sala'}` });
-        }
-        await loadScheduleData();
-      } else {
-        const roomObj = availableRooms.find(r => r.id === roomId);
-        const newAsg: Assignment = {
-          id: `asg-${Date.now()}`,
-          section_id: section.id,
-          room_id: roomId,
-          timeslot_id: timeslotId,
-          day_of_week: dayOfWeek,
-          period_id: selectedPeriod,
-          parallel_index: parallelIndex,
-          nrc: section.nrc,
-          subject_code: section.subject_code,
-          subject_name: section.subject_name,
-          level: section.level,
-          section_type: section.type,
-          teacher_name: section.teacher_name,
-          room_name: roomObj?.name || null,
-          room_type: roomObj?.type || 'TEO',
-          timeslot_label: timeslots.find(t => t.id === timeslotId)?.label || '',
-        };
-        setAssignments(prev => [...prev, newAsg]);
-        setHasChanges(true);
-      }
-      addAuditEntry('assign', `Asignado NRC ${section.nrc} a día ${dayOfWeek} (Secc. ${parallelIndex + 1})`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Error al asignar la sección';
-      setError(msg);
-      setNotice({ type: 'error', message: msg });
-    } finally {
-      setSaving(false);
-      setRoomSelectorData(null);
-    }
-  };
-
-  // Direct slot click handler (Click-to-Assign)
-  const handleSlotClick = async (timeslotId: string, dayOfWeek: number, parallelIndex: number) => {
-    if (!activeSchedulingSection) return;
-
-    const chosenRoomId = activeSchedulingSection.room_id || activeSchedulingSection.preferred_room_id;
-    if (chosenRoomId) {
-      await executeAssignment(activeSchedulingSection, chosenRoomId, timeslotId, dayOfWeek, parallelIndex);
-    } else {
-      const freeRoom = findFreeCompatibleRoom(
-        activeSchedulingSection.type,
-        dayOfWeek,
-        timeslotId,
-        activeSchedulingSection.expected_students || 0
-      );
-      if (freeRoom) {
-        await executeAssignment(activeSchedulingSection, freeRoom.id, timeslotId, dayOfWeek, parallelIndex);
-      } else {
-        setRoomSelectorData({
-          section: activeSchedulingSection,
-          timeslotId,
-          dayOfWeek,
-          parallelIndex,
-        });
-      }
-    }
-  };
-
-  const handleDrop = async (e: React.DragEvent, timeslotId: string, dayOfWeek: number, parallelIndex: number) => {
-    e.preventDefault();
-    setDropTarget(null);
-
-    let sectionToAssign = draggingSection || activeSchedulingSection;
-    if (!sectionToAssign) {
-      try {
-        const raw = e.dataTransfer.getData('text/plain');
-        if (raw) sectionToAssign = JSON.parse(raw);
-      } catch {
-        return;
-      }
-    }
-
-    if (!sectionToAssign) return;
-
-    const chosenRoomId = sectionToAssign.room_id || sectionToAssign.preferred_room_id;
-    if (chosenRoomId) {
-      await executeAssignment(sectionToAssign, chosenRoomId, timeslotId, dayOfWeek, parallelIndex);
-    } else {
-      const freeRoom = findFreeCompatibleRoom(
-        sectionToAssign.type,
-        dayOfWeek,
-        timeslotId,
-        sectionToAssign.expected_students || 0
-      );
-      if (freeRoom) {
-        await executeAssignment(sectionToAssign, freeRoom.id, timeslotId, dayOfWeek, parallelIndex);
-      } else {
-        setRoomSelectorData({
-          section: sectionToAssign,
-          timeslotId,
-          dayOfWeek,
-          parallelIndex,
-        });
-      }
-    }
-  };
-
-  const handleConfirmRoomAssignment = async (roomId: string) => {
-    if (!roomSelectorData || !selectedPeriod) return;
-    const { section, timeslotId, dayOfWeek, parallelIndex } = roomSelectorData;
-    await executeAssignment(section, roomId, timeslotId, dayOfWeek, parallelIndex ?? 0);
-  };
-
-  // Auto assign solver handler with Live Progress Tracking
-  const handleAutoAssign = async () => {
-    if (!sections.length || !selectedPeriod) return;
-    setSaving(true);
-    setNotice(null);
-    const queue = buildPrioritizedAssignmentQueue(sections);
-    let completed = 0;
-    let failed = 0;
-
-    setAutoAssignProgress({
-      current: 0,
-      total: queue.length,
-      currentSubjectName: 'Iniciando optimización heurística...',
-      completed: 0,
-      failed: 0,
-    });
-
-    let index = 0;
-    for (const sectionId of queue) {
-      index++;
-      const currentSec = sections.find(s => s.id === sectionId);
-      setAutoAssignProgress({
-        current: index,
-        total: queue.length,
-        currentSubjectName: currentSec?.subject_name || currentSec?.subject_code || 'Asignatura',
-        currentNrc: currentSec?.nrc,
-        completed,
-        failed,
-      });
-
-      try {
-        const scores = await api.getSlotScores(sectionId, selectedPeriod);
-        const best = scores.find(score => !score.blocked);
-        if (!best) {
-          failed++;
-        } else {
-          await api.assignSection({
-            section_id: sectionId,
-            room_id: best.room_id,
-            timeslot_id: best.timeslot_id,
-            day_of_week: best.day_of_week,
-            period_id: selectedPeriod,
-            parallel_index: (best as any).parallel_index ?? 0,
-          });
-          completed++;
-        }
-      } catch {
-        failed++;
-      }
-
-      setAutoAssignProgress({
-        current: index,
-        total: queue.length,
-        currentSubjectName: currentSec?.subject_name || currentSec?.subject_code || 'Asignatura',
-        currentNrc: currentSec?.nrc,
-        completed,
-        failed,
-      });
-    }
-
-    await loadScheduleData();
-    setSaving(false);
-    setAutoAssignProgress(null);
-    setProposalResult({
-      completed,
-      failed,
-      total: queue.length,
-    });
-    setNotice({
-      type: failed ? 'info' : 'success',
-      message: failed
-        ? `Propuesta generada: ${completed} bloques asignados (${failed} requieren ajuste manual)`
-        : `Propuesta automática completada: ${completed} de ${queue.length} bloques asignados`,
-    });
-    addAuditEntry('auto-assign', `Generada propuesta automática: ${completed} bloques ubicados`);
-  };
-
-  const handleClearAllAssignments = async () => {
-    if (!selectedPeriod) return;
-    setSaving(true);
-    setNotice(null);
-    try {
-      if (dataStore.getAuthToken()) {
-        await api.clearAllAssignments(selectedPeriod);
-        await loadScheduleData();
-      } else {
-        setAssignments([]);
-        setHasChanges(true);
-      }
-      addAuditEntry('clear-all', `Se desasignaron todos los módulos del periodo ${selectedPeriod}`);
-      setNotice({
-        type: 'info',
-        message: 'Todas las asignaciones han sido desasignadas exitosamente. Las secciones están listas en el backlog.',
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al desasignar el horario');
-    } finally {
-      setSaving(false);
-      setShowClearConfirmModal(false);
-    }
-  };
-
-  // Edit Assignment Modal handlers
-  const handleEditAssignment = (assignment: Assignment) => {
-    setEditingAssignment(assignment);
-  };
-
-  const handleSaveAssignment = async (assignmentId: string, data: { room_name: string; teacher_name: string }) => {
-    try {
-      const room = availableRooms.find(r => r.name === data.room_name);
-      const teacher = teachers.find(t => t.nombre === data.teacher_name);
-
-      if (dataStore.getAuthToken()) {
-        await api.updateAssignment(assignmentId, {
-          room_id: room?.id,
-          teacher_id: teacher?.id,
-        });
-        await loadScheduleData();
-      } else {
-        setAssignments(prev => prev.map(a =>
-          a.id === assignmentId ? { ...a, room_name: data.room_name, teacher_name: data.teacher_name } : a
-        ));
-        setHasChanges(true);
-      }
-      addAuditEntry('update', `Modificada asignación ${assignmentId}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al actualizar');
-    }
-  };
-
-  const handleDeleteAssignment = async (assignmentId: string) => {
-    try {
-      if (dataStore.getAuthToken()) {
-        await api.deleteAssignment(assignmentId);
-        await loadScheduleData();
-      } else {
-        setAssignments(prev => prev.filter(a => a.id !== assignmentId));
-        setHasChanges(true);
-      }
-      addAuditEntry('delete', `Desasignada clase ${assignmentId}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al eliminar');
-    }
-  };
-
-  // Section Modal (Backlog CRUD) handlers
-  const handleOpenSectionModal = (section?: Section | null, preselectedLevel?: number) => {
-    setEditingSection(section || null);
-    setModalInitialValues(null);
-    setModalDefaultLevel(preselectedLevel || (section ? section.level : (selectedViewLevel > 0 ? selectedViewLevel : 1)));
-    setIsSectionModalOpen(true);
-  };
-
-  const handleDuplicateSection = (sourceSection: Section) => {
-    const sameSubjectSections = sections.filter(s => s.subject_id === sourceSection.subject_id);
-    const nextSecNum = sameSubjectSections.length + 1;
-
-    // Find highest NRC to suggest next number
-    const allNrcs = sections.map(s => parseInt(s.nrc, 10)).filter(n => !isNaN(n));
-    const maxNrc = allNrcs.length > 0 ? Math.max(...allNrcs) : 11000;
-    const suggestedNrc = String(maxNrc + 1);
-
-    setEditingSection(null);
-    setModalDefaultLevel(sourceSection.level);
-    setModalInitialValues({
-      subject_id: sourceSection.subject_id,
-      type: sourceSection.type,
-      hours_per_week: sourceSection.hours_per_week,
-      level: sourceSection.level,
-      expected_students: sourceSection.expected_students,
-      section_code: String(nextSecNum),
-      nrc: suggestedNrc,
-      teacher_name: '',
-      parent_section_id: sourceSection.parent_section_id || '',
-    });
-    setIsSectionModalOpen(true);
-  };
-
-  const handleSaveSection = async (formData: {
-    id?: string;
-    nrc: string;
-    section_code?: string;
-    subject_id: string;
-    type: string;
-    hours_per_week: number;
-    level: number;
-    expected_students?: number;
-    teacher_name: string;
-    parent_section_id: string;
-  }) => {
-    try {
-      const teacher = teachers.find(t => t.nombre === formData.teacher_name);
-
-      if (formData.id) {
-        if (dataStore.getAuthToken()) {
-          await api.updateSection(formData.id, {
-            subject_id: formData.subject_id,
-            teacher_id: teacher?.id || null,
-            nrc: formData.nrc,
-            section_code: formData.section_code || '1',
-            type: formData.type,
-            parent_section_id: formData.parent_section_id || null,
-            hours_per_week: formData.hours_per_week,
-            expected_students: formData.expected_students || 30,
-          });
-        }
-      } else {
-        if (dataStore.getAuthToken() && selectedPeriod) {
-          await api.createSection({
-            period_id: selectedPeriod,
-            subject_id: formData.subject_id,
-            teacher_id: teacher?.id || null,
-            nrc: formData.nrc,
-            section_code: formData.section_code || '1',
-            type: formData.type,
-            parent_section_id: formData.parent_section_id || null,
-            hours_per_week: formData.hours_per_week,
-            expected_students: formData.expected_students || 30,
-          });
-        }
-      }
-      await loadScheduleData();
-      addAuditEntry('save_section', `Guardada sección NRC ${formData.nrc} (${formData.section_code ? `Sec ${formData.section_code}` : 'Sec 1'})`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al guardar sección');
-    }
-  };
-
-  const handleDeleteSection = async (sectionId: string) => {
-    try {
-      if (dataStore.getAuthToken()) {
-        await api.deleteSection(sectionId);
-        await loadScheduleData();
-      }
-      addAuditEntry('delete_section', `Eliminada sección ${sectionId}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al eliminar sección');
-    }
-  };
-
-  // Publish handler
-  const handlePublish = async () => {
-    const criticalCount = conflicts.filter(c => c.type === 'CRITICAL').length;
-    if (criticalCount > 0) {
-      alert('No se puede publicar: existen conflictos críticos sin resolver.');
-      return;
-    }
-    try {
-      if (dataStore.getAuthToken() && selectedPeriod) {
-        await api.publishSchedule(selectedPeriod);
-      }
-      setScheduleStatus('published');
-      setNotice({ type: 'success', message: 'Horario publicado exitosamente' });
-      addAuditEntry('publish', `Publicado horario del período ${selectedPeriod}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No fue posible publicar');
-    }
-  };
-
-  // PDF Export
-  const handleExportPdf = async () => {
-    try {
-      const periodObj = periods.find(p => p.id === selectedPeriod);
-      const filtered = assignments.filter(a => {
-        if (viewMode === 'nivel' && selectedViewLevel > 0) return a.level === selectedViewLevel;
-        if (viewMode === 'sala' && selectedViewRoom && selectedViewRoom !== 'TODAS') return a.room_name === selectedViewRoom;
-        if (viewMode === 'docente' && selectedViewTeacher) return a.teacher_name === selectedViewTeacher;
-        return true;
-      });
-
-      const doc = generateSchedulePdf({
-        assignments: filtered,
-        timeslots,
-        periodName: periodObj?.name || 'Horario Académico',
-        careerName: 'Planificación Académica',
-        viewMode,
-        selectedLevel: selectedViewLevel,
-        selectedRoom: selectedViewRoom,
-        selectedTeacher: selectedViewTeacher,
-        parallelTracks: 2,
-      });
-
-      const fileName = `horario_${(periodObj?.name || 'academico').toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-      doc.save(fileName);
-      addAuditEntry('export_pdf', `Exportado documento PDF del horario (${fileName})`);
-    } catch (err) {
-      console.error('Error al generar PDF:', err);
-      setError('No fue posible generar el documento PDF');
-    }
-  };
-
-  const totalRequired = useMemo(() => sections.reduce((acc, s) => acc + Number(s.hours_per_week || 0), 0), [sections]);
-  const canPublish = totalRequired > 0 && assignments.length >= totalRequired && conflicts.filter(c => c.type === 'CRITICAL').length === 0;
+  const {
+    handleDragStart,
+    handleDragEnd,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handleSlotClick,
+    handleConfirmRoomAssignment,
+    handleUpdateSectionTeacher,
+    handleUpdateSectionRoom,
+    handleAutoAssign,
+    handleClearAllAssignments,
+    handleEditAssignment,
+    handleSaveAssignment,
+    handleDeleteAssignment,
+    handleOpenSectionModal,
+    handleDuplicateSection,
+    handleSaveSection,
+    handleDeleteSection,
+    handlePublish,
+    handleExportPdf,
+  } = operations;
 
   return (
     <MainLayout
@@ -951,7 +286,15 @@ const SchedulerPage: React.FC = () => {
 
         <RoomSelectorModal
           selectorData={roomSelectorData}
-          compatibleRooms={roomSelectorData ? getCompatibleRoomsForType(roomSelectorData.section.type || 'TEO', roomSelectorData.section.expected_students || 0) : []}
+          compatibleRooms={roomSelectorData ? availableRooms.filter(r => {
+            const minCapacity = roomSelectorData.section.expected_students || 0;
+            if (minCapacity > 0 && r.capacity < minCapacity) return false;
+            const t = (roomSelectorData.section.type || '').toUpperCase();
+            if (t === 'SIM') return r.type === 'SIM';
+            if (t === 'LAB') return r.type === 'LAB' || r.type === 'SIM';
+            if (t === 'TAL') return r.type === 'TAL';
+            return r.type === 'TEO' || r.type === 'AUD';
+          }) : []}
           onClose={() => setRoomSelectorData(null)}
           onSelectRoom={handleConfirmRoomAssignment}
         />
@@ -1002,7 +345,7 @@ const SchedulerPage: React.FC = () => {
                   type="button"
                   onClick={() => setShowClearConfirmModal(false)}
                   disabled={saving}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
@@ -1015,79 +358,6 @@ const SchedulerPage: React.FC = () => {
                   <span className="material-symbols-outlined text-base">restart_alt</span>
                   <span>{saving ? 'Desasignando...' : 'Confirmar y Desasignar'}</span>
                 </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Real-Time Auto-Assign Optimization Progress Modal */}
-        {autoAssignProgress && (
-          <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-            <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col gap-4 text-center">
-              {/* Animated Icon */}
-              <div className="mx-auto size-16 rounded-2xl bg-gradient-to-tr from-primary to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-primary/30">
-                <span className="material-symbols-outlined text-3xl animate-spin">progress_activity</span>
-              </div>
-
-              {/* Title & Status */}
-              <div>
-                <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
-                  Generando Propuesta Óptima
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Evaluando restricciones de aforo, choque de nivel y salas en vivo
-                </p>
-              </div>
-
-              {/* Current Evaluating Section Card */}
-              <div className="bg-slate-50 dark:bg-slate-800/80 rounded-2xl p-3 border border-slate-200 dark:border-slate-700/70 text-left">
-                <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                  <span>Procesando</span>
-                  {autoAssignProgress.currentNrc && (
-                    <span className="font-mono text-primary">NRC {autoAssignProgress.currentNrc}</span>
-                  )}
-                </div>
-                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                  {autoAssignProgress.currentSubjectName || 'Evaluando compatibilidad...'}
-                </p>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="space-y-1.5 text-left">
-                <div className="flex items-center justify-between text-xs font-black">
-                  <span className="text-slate-700 dark:text-slate-300">
-                    Bloque {autoAssignProgress.current} de {autoAssignProgress.total}
-                  </span>
-                  <span className="text-primary font-mono text-sm">
-                    {autoAssignProgress.total > 0
-                      ? Math.round((autoAssignProgress.current / autoAssignProgress.total) * 100)
-                      : 0}%
-                  </span>
-                </div>
-                <div className="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-200 dark:border-slate-700">
-                  <div
-                    className="h-full bg-gradient-to-r from-primary to-indigo-500 rounded-full transition-all duration-200 ease-out shadow-xs"
-                    style={{
-                      width: `${autoAssignProgress.total > 0 ? (autoAssignProgress.current / autoAssignProgress.total) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Live Counters */}
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
-                  <div className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">
-                    {autoAssignProgress.completed}
-                  </div>
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Asignados</div>
-                </div>
-                <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
-                  <div className="text-sm font-extrabold text-amber-600 dark:text-amber-400">
-                    {autoAssignProgress.failed}
-                  </div>
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sin Espacio Válido</div>
-                </div>
               </div>
             </div>
           </div>
@@ -1115,7 +385,7 @@ const SchedulerPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setProposalResult(null)}
-                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-lg">close</span>
                 </button>
@@ -1160,7 +430,7 @@ const SchedulerPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setProposalResult(null)}
-                  className="px-4 py-2 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  className="px-4 py-2 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   Revisar en la Matriz
                 </button>
@@ -1170,7 +440,7 @@ const SchedulerPage: React.FC = () => {
                     setProposalResult(null);
                     setShowExportModal(true);
                   }}
-                  className="px-4 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white transition-colors"
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white transition-colors cursor-pointer"
                 >
                   Exportar Borrador
                 </button>
@@ -1181,7 +451,7 @@ const SchedulerPage: React.FC = () => {
                       setProposalResult(null);
                       handlePublish();
                     }}
-                    className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm"
+                    className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm cursor-pointer"
                   >
                     Publicar Horario Oficial
                   </button>
@@ -1202,7 +472,7 @@ const SchedulerPage: React.FC = () => {
                 for (const conflict of conflicts) {
                   await api.resolveConflict(conflict.id, true);
                 }
-                await loadScheduleData();
+                await operations.loadScheduleData();
               }}
             />
           </div>

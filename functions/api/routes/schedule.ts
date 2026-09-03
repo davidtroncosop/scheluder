@@ -11,6 +11,15 @@ import {
     shouldApplyLevelClash,
     type SectionRelationshipIdentity,
 } from '../../../features/scheduler/relationships';
+import {
+    solveSchedule,
+    type SolverAssignment,
+    type SolverRoom,
+    type SolverRoomCompatibility,
+    type SolverSection,
+    type SolverTeacherAvailability,
+    type SolverTimeslot,
+} from '../../../features/scheduler/solver';
 
 export const scheduleRoutes = new Hono<HonoEnv>();
 
@@ -73,9 +82,9 @@ scheduleRoutes.get('/schedule/status', authMiddleware, async (c) => {
     const careerId = user.career_id || c.req.query('career_id');
     if (careerId && !canAccessCareer(user, careerId)) return c.json({ error: 'No autorizado' }, 403);
     if (careerId) {
-        const row = await c.env.DB.prepare('SELECT status FROM schedule_statuses WHERE career_id = ? AND period_id = ?')
-            .bind(careerId, periodId).first<{ status: 'draft' | 'review' | 'published' }>();
-        return c.json({ status: row?.status || 'draft' });
+        const row = await c.env.DB.prepare('SELECT status, updated_at FROM schedule_statuses WHERE career_id = ? AND period_id = ?')
+            .bind(careerId, periodId).first<{ status: 'draft' | 'review' | 'published'; updated_at?: string }>();
+        return c.json({ status: row?.status || 'draft', updated_at: row?.updated_at || null });
     }
     let query = 'SELECT COUNT(*) AS total, SUM(is_published) AS published FROM schedule_assignments WHERE period_id = ?';
     const params: unknown[] = [periodId];
@@ -85,17 +94,29 @@ scheduleRoutes.get('/schedule/status', authMiddleware, async (c) => {
     }
     const result = await c.env.DB.prepare(query).bind(...params).first<{ total: number; published: number | null }>();
     const total = result?.total || 0;
-    return c.json({ status: total > 0 && result?.published === total ? 'published' : 'draft' });
+    return c.json({ status: total > 0 && result?.published === total ? 'published' : 'draft', updated_at: null });
 });
 
 scheduleRoutes.put('/schedule/status', authMiddleware, async (c) => {
     const user = c.get('user') as UserPayload;
     if (!canMutate(user)) return c.json({ error: 'No autorizado' }, 403);
-    const body = await c.req.json<{ period_id?: string; career_id?: string; status?: 'draft' | 'review' }>();
+    const body = await c.req.json<{ period_id?: string; career_id?: string; status?: 'draft' | 'review'; expected_updated_at?: string }>();
     const careerId = user.career_id || body.career_id;
     if (!body.period_id || !careerId || !['draft', 'review'].includes(body.status || '') || !canAccessCareer(user, careerId)) {
         return c.json({ error: 'Datos de estado inválidos' }, 400);
     }
+
+    if (body.expected_updated_at) {
+        const current = await c.env.DB.prepare('SELECT updated_at FROM schedule_statuses WHERE career_id = ? AND period_id = ?')
+            .bind(careerId, body.period_id).first<{ updated_at: string }>();
+        if (current?.updated_at && current.updated_at > body.expected_updated_at) {
+            return c.json({
+                error: 'CONFLICT_CONCURRENT_MODIFICATION',
+                message: 'El estado del horario fue actualizado por otro usuario. Por favor recarga para sincronizar.',
+            }, 409);
+        }
+    }
+
     await saveScheduleStatus(c.env.DB, careerId, body.period_id, body.status!, user.id);
     await recordAudit(c.env.DB, user, 'STATUS_CHANGE', 'period', body.period_id, null, { career_id: careerId, status: body.status });
     return c.json({ success: true, status: body.status });
@@ -104,7 +125,7 @@ scheduleRoutes.put('/schedule/status', authMiddleware, async (c) => {
 scheduleRoutes.post('/schedule/publish', authMiddleware, async (c) => {
     const user = c.get('user') as UserPayload;
     if (!canMutate(user)) return c.json({ error: 'No autorizado' }, 403);
-    const { period_id, career_id } = await c.req.json<{ period_id?: string; career_id?: string }>();
+    const { period_id, career_id, expected_updated_at } = await c.req.json<{ period_id?: string; career_id?: string; expected_updated_at?: string }>();
     let targetCareerId = user.career_id || career_id;
     if (!targetCareerId && user.role === 'admin') {
         const careers = await c.env.DB.prepare('SELECT DISTINCT career_id FROM sections WHERE period_id = ? LIMIT 2')
@@ -112,6 +133,17 @@ scheduleRoutes.post('/schedule/publish', authMiddleware, async (c) => {
         if (careers.results.length === 1) targetCareerId = careers.results[0].career_id;
     }
     if (!period_id || !targetCareerId || !canAccessCareer(user, targetCareerId)) return c.json({ error: 'period_id y carrera requeridos' }, 400);
+
+    if (expected_updated_at) {
+        const current = await c.env.DB.prepare('SELECT updated_at FROM schedule_statuses WHERE career_id = ? AND period_id = ?')
+            .bind(targetCareerId, period_id).first<{ updated_at: string }>();
+        if (current?.updated_at && current.updated_at > expected_updated_at) {
+            return c.json({
+                error: 'CONFLICT_CONCURRENT_MODIFICATION',
+                message: 'El horario fue actualizado por otro usuario mientras revisabas. Por favor sincroniza antes de publicar.',
+            }, 409);
+        }
+    }
 
     let conflictQuery = `SELECT COUNT(*) AS total FROM conflicts c
         JOIN schedule_assignments sa ON sa.id = c.assignment_id
@@ -293,6 +325,215 @@ scheduleRoutes.post('/schedule/clear-all', authMiddleware, async (c) => {
         return c.json({ success: true, message: 'Todas las asignaciones han sido desasignadas exitosamente' });
     } catch (error) {
         return c.json({ error: 'Error al desasignar el horario' }, 500);
+    }
+});
+
+scheduleRoutes.post('/schedule/auto-assign', authMiddleware, async (c) => {
+    const db = c.env.DB;
+    const user = c.get('user') as UserPayload;
+    if (!canMutate(user)) return c.json({ error: 'No autorizado para realizar modificaciones' }, 403);
+
+    const body = await c.req.json<{
+        period_id: string;
+        career_id?: string;
+        max_backtrack_depth?: number;
+        mode?: 'merge' | 'replace';
+    }>().catch(() => ({ period_id: '', career_id: undefined, max_backtrack_depth: undefined, mode: undefined }));
+
+    const periodId = body.period_id || c.req.query('period_id');
+    const targetCareerId = user.career_id || body.career_id;
+
+    if (!periodId || !targetCareerId) {
+        return c.json({ error: 'period_id y career_id requeridos' }, 400);
+    }
+    if (!canAccessCareer(user, targetCareerId)) {
+        return c.json({ error: 'No autorizado para acceder a esta carrera' }, 403);
+    }
+
+    try {
+        const [sectionsResult, roomsResult, timeslotsResult, availResult, compatResult, existingResult] = await Promise.all([
+            db.prepare(`
+                SELECT s.id, s.nrc, s.section_code, s.subject_id, sub.name as subject_name, sub.code as subject_code,
+                       sub.level, s.type, s.parent_section_id, s.hours_per_week, s.teacher_id, t.name as teacher_name,
+                       s.career_id, s.expected_students, s.preferred_room_id
+                FROM sections s
+                JOIN subjects sub ON sub.id = s.subject_id
+                LEFT JOIN teachers t ON t.id = s.teacher_id
+                WHERE s.career_id = ? AND s.period_id = ?
+            `).bind(targetCareerId, periodId).all(),
+
+            db.prepare(`
+                SELECT id, name, type, capacity, is_shared, career_id
+                FROM rooms
+                WHERE is_active = 1 AND (is_shared = 1 OR career_id = ?)
+            `).bind(targetCareerId).all(),
+
+            db.prepare('SELECT id, label, order_index, start_time, end_time FROM timeslots ORDER BY order_index').all(),
+
+            db.prepare(`
+                SELECT teacher_id, timeslot_id, day_of_week, status
+                FROM teacher_availability
+            `).all(),
+
+            db.prepare(`
+                SELECT src.subject_id, src.room_id, src.requirement_level, r.type as room_type
+                FROM subject_room_compatibilities src
+                JOIN rooms r ON r.id = src.room_id
+            `).all(),
+
+            db.prepare(`
+                SELECT id, section_id, room_id, timeslot_id, day_of_week, parallel_index
+                FROM schedule_assignments
+                WHERE period_id = ? AND career_id = ?
+            `).bind(periodId, targetCareerId).all(),
+        ]);
+
+        const solverSections: SolverSection[] = (sectionsResult.results as any[]).map(r => ({
+            id: r.id,
+            nrc: r.nrc,
+            section_code: r.section_code,
+            subject_id: r.subject_id,
+            subject_name: r.subject_name,
+            subject_code: r.subject_code,
+            level: Number(r.level),
+            type: r.type || 'TEO',
+            parent_section_id: r.parent_section_id,
+            hours_per_week: Number(r.hours_per_week || 2),
+            teacher_id: r.teacher_id,
+            teacher_name: r.teacher_name,
+            career_id: r.career_id,
+            expected_students: Number(r.expected_students || 30),
+            preferred_room_id: r.preferred_room_id,
+        }));
+
+        const solverRooms: SolverRoom[] = (roomsResult.results as any[]).map(r => ({
+            id: r.id,
+            name: r.name,
+            type: r.type,
+            capacity: Number(r.capacity || 30),
+            is_shared: Boolean(r.is_shared),
+            career_id: r.career_id,
+        }));
+
+        const solverTimeslots: SolverTimeslot[] = (timeslotsResult.results as any[]).map(r => ({
+            id: r.id,
+            label: r.label,
+            order_index: Number(r.order_index),
+            start_time: r.start_time,
+            end_time: r.end_time,
+        }));
+
+        const solverAvailabilities: SolverTeacherAvailability[] = (availResult.results as any[]).map(r => ({
+            teacher_id: r.teacher_id,
+            timeslot_id: r.timeslot_id,
+            day_of_week: Number(r.day_of_week),
+            status: r.status,
+        }));
+
+        const solverCompatibilities: SolverRoomCompatibility[] = (compatResult.results as any[]).map(r => ({
+            subject_id: r.subject_id,
+            room_id: r.room_id,
+            requirement_level: r.requirement_level,
+            room_type: r.room_type,
+        }));
+
+        const existingAssignments: SolverAssignment[] = body.mode === 'replace' ? [] : (existingResult.results as any[]).map(r => ({
+            id: r.id,
+            section_id: r.section_id,
+            room_id: r.room_id,
+            timeslot_id: r.timeslot_id,
+            day_of_week: Number(r.day_of_week),
+            parallel_index: Number(r.parallel_index || 0),
+        }));
+
+        const solution = solveSchedule(
+            solverSections,
+            solverRooms,
+            solverTimeslots,
+            solverAvailabilities,
+            solverCompatibilities,
+            {
+                existingAssignments,
+                maxBacktrackDepth: body.max_backtrack_depth ?? 2,
+                maxRelocations: 30,
+            },
+        );
+
+        const statements: any[] = [];
+
+        if (body.mode === 'replace') {
+            statements.push(
+                db.prepare('DELETE FROM conflicts WHERE assignment_id IN (SELECT id FROM schedule_assignments WHERE period_id = ? AND career_id = ?)')
+                    .bind(periodId, targetCareerId),
+                db.prepare('DELETE FROM schedule_assignments WHERE period_id = ? AND career_id = ?')
+                    .bind(periodId, targetCareerId)
+            );
+        }
+
+        const existingIds = new Set(existingAssignments.map(a => a.id));
+        const newAssignments = solution.assignments.filter(a => !existingIds.has(a.id));
+
+        for (const rel of solution.relocations) {
+            statements.push(
+                db.prepare(`
+                    UPDATE schedule_assignments
+                    SET timeslot_id = ?, day_of_week = ?, room_id = ?, updated_at = datetime('now')
+                    WHERE period_id = ? AND career_id = ? AND section_id = ? AND timeslot_id = ? AND day_of_week = ?
+                `).bind(
+                    rel.toSlot.timeslot_id,
+                    rel.toSlot.day_of_week,
+                    rel.toSlot.room_id,
+                    periodId,
+                    targetCareerId,
+                    rel.movedSectionId,
+                    rel.fromSlot.timeslot_id,
+                    rel.fromSlot.day_of_week,
+                )
+            );
+        }
+
+        for (const asgn of newAssignments) {
+            statements.push(
+                db.prepare(`
+                    INSERT INTO schedule_assignments (id, section_id, room_id, timeslot_id, day_of_week, parallel_index, career_id, period_id, is_published, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
+                `).bind(
+                    asgn.id.startsWith('asgn-') ? crypto.randomUUID() : asgn.id,
+                    asgn.section_id,
+                    asgn.room_id,
+                    asgn.timeslot_id,
+                    asgn.day_of_week,
+                    asgn.parallel_index,
+                    targetCareerId,
+                    periodId,
+                )
+            );
+        }
+
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < statements.length; i += BATCH_SIZE) {
+            const chunk = statements.slice(i, i + BATCH_SIZE);
+            if (chunk.length > 0) {
+                await db.batch(chunk);
+            }
+        }
+
+        await saveScheduleStatus(db, targetCareerId, periodId, 'draft', user.id);
+        await recordAudit(db, user, 'AUTO_ASSIGN', 'schedule', periodId, null, {
+            career_id: targetCareerId,
+            assignedCount: solution.totalSlotsAssigned,
+            coveragePercentage: solution.coveragePercentage,
+            deadlocksResolved: solution.deadlocksResolved,
+            relocationsCount: solution.relocations.length,
+        });
+
+        return c.json({
+            success: true,
+            ...solution,
+        });
+    } catch (error) {
+        console.error('Error during auto-assignment solve:', error);
+        return c.json({ error: 'Error durante la optimización automática del horario' }, 500);
     }
 });
 
