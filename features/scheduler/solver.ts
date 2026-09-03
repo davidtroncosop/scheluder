@@ -370,8 +370,24 @@ export const solveSchedule = (
     const candidates: Array<{ day: number; timeslot: SolverTimeslot; room: SolverRoom; score: number }> = [];
     const targetParallelIndex = determineParallelIndex(section);
 
+    const slotMap = new Map<string, SolverAssignment[]>();
+    const dayMap = new Map<number, SolverAssignment[]>();
+    for (const a of currentAssignments) {
+      if (excludeAssignmentId && a.id === excludeAssignmentId) continue;
+      const k = `${a.day_of_week}|${a.timeslot_id}`;
+      const sl = slotMap.get(k);
+      if (sl) sl.push(a);
+      else slotMap.set(k, [a]);
+
+      const dl = dayMap.get(a.day_of_week);
+      if (dl) dl.push(a);
+      else dayMap.set(a.day_of_week, [a]);
+    }
+
     for (let day = 1; day <= 5; day++) {
+      const dayAsgns = dayMap.get(day) || [];
       for (const timeslot of sortedTimeslots) {
+        const slotAsgns = slotMap.get(`${day}|${timeslot.id}`) || [];
         for (const room of rooms) {
           const check = checkHardConflict(
             section,
@@ -379,7 +395,7 @@ export const solveSchedule = (
             timeslot,
             room,
             targetParallelIndex,
-            currentAssignments,
+            slotAsgns,
             sectionsMap,
             roomsMap,
             blockedTeacherSlots,
@@ -393,7 +409,7 @@ export const solveSchedule = (
               day,
               timeslot,
               room,
-              currentAssignments,
+              dayAsgns,
               sectionsMap,
               timeslotsMap,
               teacherPreferences,
@@ -478,15 +494,24 @@ export const solveSchedule = (
 
     if (relocations.length < maxRelocations && maxBacktrackDepth >= 1) {
       // Find "near-miss" slots: slots where placing `sec` is blocked by exactly ONE assignment
-      const nearMisses: Array<{
+      const nearMissesMap = new Map<string, {
         day: number;
         timeslot: SolverTimeslot;
         room: SolverRoom;
         blockingAssignment: SolverAssignment;
-      }> = [];
+      }>();
+
+      const activeSlotMap = new Map<string, SolverAssignment[]>();
+      for (const a of activeAssignments) {
+        const k = `${a.day_of_week}|${a.timeslot_id}`;
+        const sl = activeSlotMap.get(k);
+        if (sl) sl.push(a);
+        else activeSlotMap.set(k, [a]);
+      }
 
       for (let day = 1; day <= 5; day++) {
         for (const timeslot of sortedTimeslots) {
+          const slotAsgns = activeSlotMap.get(`${day}|${timeslot.id}`) || [];
           for (const room of rooms) {
             const check = checkHardConflict(
               sec,
@@ -494,7 +519,7 @@ export const solveSchedule = (
               timeslot,
               room,
               targetParallelIndex,
-              activeAssignments,
+              slotAsgns,
               sectionsMap,
               roomsMap,
               blockedTeacherSlots,
@@ -505,12 +530,16 @@ export const solveSchedule = (
               const blk = check.conflictingAssignment;
               // Can only relocate assignments that aren't locked and belong to different sections
               if (!lockedIds.has(blk.id) && blk.section_id !== sec.id) {
-                nearMisses.push({ day, timeslot, room, blockingAssignment: blk });
+                if (!nearMissesMap.has(blk.id)) {
+                  nearMissesMap.set(blk.id, { day, timeslot, room, blockingAssignment: blk });
+                }
               }
             }
           }
         }
       }
+
+      const nearMisses = Array.from(nearMissesMap.values()).slice(0, 8);
 
       // Try 1-Hop Relocation on near-miss blockers
       for (const miss of nearMisses) {

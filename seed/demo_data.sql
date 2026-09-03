@@ -11,7 +11,8 @@ INSERT INTO faculties (id, name, code) VALUES
 INSERT INTO careers (id, faculty_id, name, code) VALUES
 ('car-kine-001', 'fac-salud-001', 'Kinesiología', 'KINE'),
 ('car-enf-001', 'fac-salud-001', 'Enfermería', 'ENF'),
-('car-med-001', 'fac-salud-001', 'Medicina', 'MED');
+('car-med-001', 'fac-salud-001', 'Medicina', 'MED'),
+('car-fono-001', 'fac-salud-001', 'Fonoaudiología', 'FONO');
 
 -- Períodos académicos demo
 INSERT INTO periods (id, code, name, start_date, end_date, is_active) VALUES
@@ -23,7 +24,8 @@ INSERT INTO periods (id, code, name, start_date, end_date, is_active) VALUES
 -- hashes usan el mismo formato PBKDF2 que producción.
 INSERT INTO users (id, email, name, password_hash, role, career_id) VALUES
 ('usr-9d962496-8a26-47bb-8da7-a3868ba784a6', 'admin@scheduler.pro', 'Administrador', 'pbkdf2-sha256$100000$x4RElwZ6WZtzsf3o2MYxNg$pKUtP3BvoMXpTew-bda2MMdyR0eWQZ_eUeVqWh89jnU', 'admin', NULL),
-('usr-23939da0-e3f3-49f5-b21b-09647ef63bbb', 'coordinador@kine.edu', 'Coordinador Kinesiología', 'pbkdf2-sha256$100000$KAZoUEqQc9obiR1i4WGyKQ$cwiYBEkT94t0r1PAgHVBLXu4Mqg0NEbY6h8FGmO6Y4I', 'coordinator', 'car-kine-001');
+('usr-23939da0-e3f3-49f5-b21b-09647ef63bbb', 'coordinador@kine.edu', 'Coordinador Kinesiología', 'pbkdf2-sha256$100000$KAZoUEqQc9obiR1i4WGyKQ$cwiYBEkT94t0r1PAgHVBLXu4Mqg0NEbY6h8FGmO6Y4I', 'coordinator', 'car-kine-001'),
+('usr-coord-fono', 'coordinador@fono.edu', 'Coordinador Fonoaudiología', 'pbkdf2-sha256$100000$qltareqb6BRpdUYDTGHRyQ$3gCykDO02fTpZapEh-sxKprru8BIPl5ddH_mUmi8SrY', 'coordinator', 'car-fono-001');
 
 -- Timeslots (Módulos)
 INSERT INTO timeslots (id, label, start_time, end_time, order_index) VALUES

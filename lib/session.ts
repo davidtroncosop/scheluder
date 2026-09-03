@@ -45,15 +45,16 @@ export const session = {
 };
 
 export const createOfflineDemoSession = (email: string): { token: string; user: SessionUser } => {
+  const isFono = email.toLowerCase().includes('fono');
   const isAdmin = email.toLowerCase().includes('admin');
   return {
     token: 'offline-demo-token',
     user: {
-      id: isAdmin ? 'usr-admin-001' : 'usr-coord-kine',
+      id: isAdmin ? 'usr-admin-001' : isFono ? 'usr-coord-fono' : 'usr-coord-kine',
       email,
-      name: isAdmin ? 'Administrador Demo' : 'Coordinador Kinesiología',
+      name: isAdmin ? 'Administrador Demo' : isFono ? 'Coordinador Fonoaudiología' : 'Coordinador Kinesiología',
       role: isAdmin ? 'admin' : 'coordinator',
-      career_id: isAdmin ? null : 'car-kine-001',
+      career_id: isAdmin ? null : isFono ? 'car-fono-001' : 'car-kine-001',
     },
   };
 };
