@@ -52,7 +52,7 @@ class SchedulerAPI {
                 this.token = null;
                 session.clear();
             }
-            const detail = error.conflicts?.map((c: any) => c.description).join('. ');
+            const detail = error.conflicts?.map((c: any) => c.description).join('. ') || error.details;
             const message = detail ? `${error.error || 'Conflicto'}: ${detail}` : (error.error || `Error ${response.status}`);
             throw new Error(message);
         }

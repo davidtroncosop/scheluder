@@ -533,7 +533,8 @@ scheduleRoutes.post('/schedule/auto-assign', authMiddleware, async (c) => {
         });
     } catch (error) {
         console.error('Error during auto-assignment solve:', error);
-        return c.json({ error: 'Error durante la optimización automática del horario' }, 500);
+        const details = error instanceof Error ? error.message : String(error);
+        return c.json({ error: 'Error durante la optimización automática del horario', details }, 500);
     }
 });
 
