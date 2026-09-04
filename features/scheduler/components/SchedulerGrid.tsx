@@ -440,30 +440,10 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
     ? [1, 2, 3, 4, 5] 
     : [selectedDay];
 
-  // Auto-detect maximum simultaneous / parallel modules in the active level view
-  const maxParallelInCurrentView = useMemo(() => {
-    if (viewMode !== 'nivel') return 1;
-    let max = 1;
-    sortedTimeslots.forEach(ts => {
-      activeDays.forEach(day => {
-        const cell = filteredAssignments.filter(a => a.day_of_week === day && a.timeslot_id === ts.id);
-        if (cell.length > 1) {
-          max = Math.max(max, cell.length);
-        }
-        cell.forEach(a => {
-          if (a.parallel_index !== undefined && a.parallel_index !== null) {
-            max = Math.max(max, Number(a.parallel_index) + 1);
-          }
-        });
-      });
-    });
-    return Math.min(3, max);
-  }, [viewMode, filteredAssignments, sortedTimeslots, activeDays]);
-
   const effectiveParallelTracks = useMemo(() => {
     if (viewMode !== 'nivel') return 1;
-    return Math.max(parallelTracks, maxParallelInCurrentView);
-  }, [viewMode, parallelTracks, maxParallelInCurrentView]);
+    return parallelTracks;
+  }, [viewMode, parallelTracks]);
 
   // Compatible rooms for the active section
   const targetSecType = (targetSection?.type || 'TEO').toUpperCase();

@@ -51,7 +51,7 @@ export function useSchedulerState() {
 
   // View mode states
   const [viewMode, setViewMode] = useState<'nivel' | 'sala' | 'docente'>('nivel');
-  const [selectedViewLevel, setSelectedViewLevel] = useState<number>(0);
+  const [selectedViewLevel, setSelectedViewLevel] = useState<number>(1);
   const [selectedViewTeacher, setSelectedViewTeacher] = useState<string | null>(null);
   const [selectedViewRoom, setSelectedViewRoom] = useState<string>('TODAS');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
