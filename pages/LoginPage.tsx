@@ -10,6 +10,7 @@ interface LoginPageProps {
 
 const QUICK_ACCOUNTS = [
   { email: 'davidtroncosop@gmail.com', password: 'DemoLocal2026!', label: 'David Troncoso (Admin)', description: 'Administrador total del sistema', icon: 'shield_person', color: 'from-blue-600 to-indigo-600' },
+  { email: 'coordinador@fono.edu', password: 'DemoLocal2026!', label: 'Coordinador Fonoaudiología', description: 'Planificación desde cero', icon: 'record_voice_over', color: 'from-amber-500 to-orange-600', badge: 'En blanco' },
   { email: 'coordinador@kine.edu', password: 'DemoLocal2026!', label: 'Coordinador Kinesiología', description: 'Planificación de carrera', icon: 'school', color: 'from-emerald-600 to-teal-600' },
   { email: 'admin@scheduler.pro', password: 'DemoLocal2026!', label: 'Admin General', description: 'Gestión institucional', icon: 'admin_panel_settings', color: 'from-purple-600 to-indigo-600' },
 ];
@@ -112,7 +113,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ onToggleDarkMode, isDarkMode }) =
                     <span className="material-symbols-outlined text-base">{acc.icon}</span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors">{acc.label}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors">{acc.label}</p>
+                      {'badge' in acc && acc.badge && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                          {acc.badge}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[10px] text-slate-400 truncate">{acc.email}</p>
                   </div>
                   <span className="material-symbols-outlined text-xs text-slate-300 group-hover:text-primary transition-colors">bolt</span>
