@@ -50,43 +50,6 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
     return Array.from(levels).sort((a, b) => a - b);
   }, [sections]);
 
-  if (collapsed) {
-    return (
-      <aside className="w-14 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center py-4 gap-4 z-20 shrink-0">
-        <button
-          type="button"
-          onClick={onToggleCollapse}
-          className="p-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-          title="Expandir panel lateral"
-        >
-          <span className="material-symbols-outlined text-lg">chevron_right</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            onToggleCollapse();
-            setActiveTab('secciones');
-          }}
-          className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
-          title="Ver secciones"
-        >
-          <span className="material-symbols-outlined text-lg">view_list</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            onToggleCollapse();
-            setActiveTab('docentes');
-          }}
-          className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-          title="Ver docentes"
-        >
-          <span className="material-symbols-outlined text-lg">groups</span>
-        </button>
-      </aside>
-    );
-  }
-
   const pendingCount = useMemo(() => sections.filter(s => (s.assigned_slots || 0) < Number(s.hours_per_week || 0)).length, [sections]);
   const completedCount = sections.length - pendingCount;
 
@@ -131,6 +94,49 @@ export const SchedulerSidebar: React.FC<SchedulerSidebarProps> = ({
     });
     return count;
   }, [teacherLoadMap]);
+
+  if (collapsed) {
+    return (
+      <aside className="w-14 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center py-4 gap-4 z-20 shrink-0">
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="p-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+          title="Expandir panel lateral"
+        >
+          <span className="material-symbols-outlined text-lg">chevron_right</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onToggleCollapse();
+            setActiveTab('secciones');
+          }}
+          className="relative p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
+          title={`Ver secciones (${pendingCount} pendientes)`}
+        >
+          <span className="material-symbols-outlined text-lg">view_list</span>
+          {pendingCount > 0 && (
+            <span className="absolute top-1 right-1 size-2 bg-primary rounded-full ring-2 ring-white dark:ring-slate-900" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onToggleCollapse();
+            setActiveTab('docentes');
+          }}
+          className="relative p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+          title={`Ver docentes (${teachers.length})`}
+        >
+          <span className="material-symbols-outlined text-lg">groups</span>
+          {overloadedTeachersCount > 0 && (
+            <span className="absolute top-1 right-1 size-2 bg-rose-500 rounded-full animate-pulse ring-2 ring-white dark:ring-slate-900" />
+          )}
+        </button>
+      </aside>
+    );
+  }
 
   // Filter sections
   const filteredSections = sections.filter(section => {
