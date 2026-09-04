@@ -8,7 +8,6 @@ import { useSchedulerState } from '../features/scheduler/hooks/useSchedulerState
 import { useSchedulerOperations } from '../features/scheduler/hooks/useSchedulerOperations';
 
 import { SchedulerHeader } from '../features/scheduler/components/SchedulerHeader';
-import { SchedulerStats } from '../features/scheduler/components/SchedulerStats';
 import { SchedulerGrid } from '../features/scheduler/components/SchedulerGrid';
 import { SchedulerSidebar } from '../features/scheduler/components/SchedulerSidebar';
 import { AssignmentModal } from '../features/scheduler/components/AssignmentModal';
@@ -186,13 +185,8 @@ const SchedulerPage: React.FC = () => {
           saving={saving}
           hasChanges={hasChanges}
           canPublish={canPublish}
-        />
-
-        {/* Health Stats & Conflict Badges */}
-        <SchedulerStats
           metrics={metrics}
           conflicts={conflicts}
-          assignments={assignments}
           onOpenConflictsPanel={() => setShowConflictsPanel(true)}
         />
 

@@ -391,34 +391,34 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
   };
 
   const getTypeStyle = (type?: string) => {
-    switch ((type || 'TEO').toUpperCase()) {
+    switch (type?.toUpperCase()) {
       case 'LAB':
-        return 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-400/40 font-bold';
+        return 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20 font-bold';
       case 'SIM':
-        return 'bg-purple-500/15 text-purple-800 dark:text-purple-300 border-purple-400/40 font-bold';
+        return 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20 font-bold';
       case 'TAL':
-        return 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-400/40 font-bold';
+        return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20 font-bold';
       default:
-        return 'bg-blue-500/15 text-blue-800 dark:text-blue-300 border-blue-400/40 font-bold';
+        return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 font-bold';
     }
   };
 
   const getSectionBadgeStyle = (secCode?: string | number | null) => {
     const str = String(secCode || '1').toUpperCase();
     const num = parseInt(str.replace(/\D/g, ''), 10) || 1;
-    if (num === 1) return 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border-blue-300 dark:border-blue-700/80';
-    if (num === 2) return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700/80';
-    if (num === 3) return 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border-amber-300 dark:border-amber-700/80';
-    return 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200 border-purple-300 dark:border-purple-700/80';
+    if (num === 1) return 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200/60 dark:border-blue-800/60';
+    if (num === 2) return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-800/60';
+    if (num === 3) return 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200/60 dark:border-amber-800/60';
+    return 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200/60 dark:border-purple-800/60';
   };
 
   const formatSectionLabel = (secCode?: string | number | null, parallelIndex?: number) => {
     if (secCode) {
       const clean = String(secCode).trim();
-      if (clean.toUpperCase().startsWith('SEC')) return clean;
-      return `Sec ${clean}`;
+      if (clean.toUpperCase().startsWith('S')) return clean;
+      return `S${clean}`;
     }
-    return `Sec ${(parallelIndex ?? 0) + 1}`;
+    return `S${(parallelIndex ?? 0) + 1}`;
   };
 
   const getAssignmentTrackIndex = (assignment: Assignment, fallbackIndex: number, totalTracks: number): number => {
@@ -822,9 +822,9 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                                     ? 'animate-assign-pop animate-assign-glow ring-2 ring-primary border-primary z-20'
                                     : conflict
                                     ? conflict.type === 'CRITICAL'
-                                    ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 text-rose-900 dark:text-rose-200 ring-1 ring-rose-400'
-                                    : 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 text-amber-900 dark:text-amber-200'
-                                  : 'bg-white dark:bg-slate-800/90 border-slate-200 dark:border-slate-700 hover:border-primary/50'
+                                    ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 border-l-4 border-l-rose-500 shadow-2xs'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 border-l-4 border-l-amber-500 shadow-2xs'
+                                  : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs'
                                 }`}
                               >
                                 <div className="flex items-start justify-between gap-1 mb-1">
@@ -981,9 +981,9 @@ export const SchedulerGrid: React.FC<SchedulerGridProps> = ({
                                         ? 'animate-assign-pop animate-assign-glow ring-2 ring-primary border-primary z-20'
                                         : conflict
                                         ? conflict.type === 'CRITICAL'
-                                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 text-rose-900 dark:text-rose-200 ring-1 ring-rose-400'
-                                        : 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 text-amber-900 dark:text-amber-200'
-                                      : 'bg-white dark:bg-slate-800/90 border-slate-200 dark:border-slate-700 hover:border-primary/50'
+                                        ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 border-l-4 border-l-rose-500 shadow-2xs'
+                                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 border-l-4 border-l-amber-500 shadow-2xs'
+                                      : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs'
                                     }`}
                                   >
                                     <div className="flex items-start justify-between gap-1 mb-1">

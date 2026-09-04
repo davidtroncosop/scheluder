@@ -30,7 +30,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         try {
             const saved = localStorage.getItem('sidebarCollapsed');
-            return saved === 'true';
+            if (saved !== null) return saved === 'true';
+            return location.pathname.startsWith('/scheduler');
         } catch (e) {
             return false;
         }
